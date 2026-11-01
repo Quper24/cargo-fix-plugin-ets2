@@ -1,6 +1,6 @@
 #include "freight.h"
 #include "company_list.h"
-#include "generation_limit.h"
+#include "refresh_cooldown.h"
 #include "notifications.h"
 #include <Windows.h>
 #include <array>
@@ -22,7 +22,7 @@ using Schedule = void(__fastcall*)(std::uintptr_t, std::uintptr_t, std::uint32_t
 
 std::uintptr_t base = 0;
 Logger logger = nullptr;
-GenerationLimit limit;
+RefreshCooldown cooldown;
 unsigned hotkey = VK_F9;
 bool initialized = false, key_down = false;
 std::uintptr_t manual_company = 0;
@@ -99,14 +99,13 @@ void Run() {
     const auto economy = At<std::uintptr_t>(base, 0x3046780);
     if (!economy) return;
     const auto now = At<std::uint32_t>(economy, 0x19c);
-    limit.Refresh(now);
-    if (limit.Blocked()) {
-        const auto minutes = limit.NextAvailable() - now;
+    const auto remaining = cooldown.Remaining(GetTickCount64());
+    if (remaining) {
         wchar_t message[400];
         const auto format = notifications::Translate(L"FreightCooldown",
-            L"Freight market / Quick jobs\nGeneration limit reached. Try again in %u h %02u min of game time.",
-            L"Рынок грузоперевозок / Заказы агентств\nЛимит генерации исчерпан. Повторная генерация через %u ч %02u мин игрового времени.");
-        swprintf_s(message, format.c_str(), minutes / 60, minutes % 60);
+            L"Freight market / Quick jobs\nPlease wait %u s before refreshing again.",
+            L"Рынок грузоперевозок / Заказы агентств\nПовторное обновление доступно через %u с.");
+        swprintf_s(message, format.c_str(), static_cast<unsigned>((remaining + 999) / 1000));
         notifications::Show(message); return;
     }
     const auto array = At<std::uintptr_t>(economy, 0x28);
@@ -120,7 +119,7 @@ void Run() {
             L"Список компаний недоступен. Подробности в game.log.txt."));
         return;
     }
-    const auto deadline = limit.Deadline(now);
+    const auto deadline = now + 48u * 60u;
     const auto started = GetTickCount64();
     std::uint64_t refreshed = 0, companies_refreshed = 0, skipped_invalid = 0;
     notifications::Show(notifications::Translate(L"FreightGenerating",
@@ -170,23 +169,23 @@ void Run() {
         refreshed += valid;
         if (valid) ++companies_refreshed;
     }
-    if (refreshed) limit.RecordSuccess(now);
+    cooldown.Start(GetTickCount64()); // Cooldown starts after completion, including empty results.
     wchar_t message[420];
     const auto format = notifications::Translate(L"FreightResult",
-        L"Freight market / Quick jobs\nOrders refreshed: %llu. Available runs: %u of 3.",
-        L"Рынок грузоперевозок / Заказы агентств\nОбновлено заказов: %llu. Доступно запусков: %u из 3.");
-    swprintf_s(message, format.c_str(), refreshed, limit.RemainingUses());
+        L"Freight market / Quick jobs\nOrders refreshed: %llu. You can refresh again in 5 s.",
+        L"Рынок грузоперевозок / Заказы агентств\nОбновлено заказов: %llu. Следующее обновление доступно через 5 с.");
+    swprintf_s(message, format.c_str(), refreshed);
     std::wstring result = message;
     if (skipped_invalid) result += notifications::Translate(L"FreightInvalidSave",
         L"\nIncompatible slots found. Load a save from before using version 0.4 F9.",
         L"\nНайдены несовместимые слоты. Загрузите сохранение до использования F9 версии 0.4.");
     else if (!refreshed) result += notifications::Translate(L"FreightNotConsumed",
-        L"\nNo offers were created; this generation slot was not consumed.",
-        L"\nНовые предложения не созданы; запуск не израсходован.");
+        L"\nNo offers were created.",
+        L"\nНовые предложения не созданы.");
     notifications::Show(result);
     char log[280];
-    sprintf_s(log, "Freight / Quick jobs stock refresh finished: refreshed=%llu, companies=%llu, skipped_invalid=%llu, remaining=%u, elapsed_ms=%llu.",
-        refreshed, companies_refreshed, skipped_invalid, limit.RemainingUses(), GetTickCount64() - started);
+    sprintf_s(log, "Freight / Quick jobs stock refresh finished: refreshed=%llu, companies=%llu, skipped_invalid=%llu, cooldown_ms=5000, elapsed_ms=%llu.",
+        refreshed, companies_refreshed, skipped_invalid, GetTickCount64() - started);
     Log(log);
 }
 }
@@ -204,7 +203,7 @@ bool Initialize(std::uintptr_t module, const std::filesystem::path& directory, L
     Log("Freight / Quick jobs stock refresh enabled; physical slot counts remain native.");
     return true;
 }
-void Reset() { limit.Reset(); key_down = false; }
+void Reset() { cooldown.Reset(); key_down = false; }
 void PrepareForDriving() {}
 void Tick(bool driving, unsigned cargo_key) {
     const bool down = (GetAsyncKeyState(hotkey) & 0x8000) != 0;

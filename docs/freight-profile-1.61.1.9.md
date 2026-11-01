@@ -23,7 +23,7 @@ Clear releases old base-market offers and removes old company refresh events. Fi
 
 One schedule hook remains at RVA 0x81cec9, expected bytes 48 89 5c 24 10. The prologue trampoline executes this complete stack-store instruction and jumps back to +5, preserving the entry null-company guard. During manual refresh only, successful regular offers receive a 48-game-hour scheduled expiry. Native retries, special events and all automatic calls keep their stock timing. Valid resulting offer timestamp fields +0x48 and +0x60 are normalized to that deadline.
 
-The base-offer vector is at company+0x78. The owned-trailer vector at +0xa0 and its separate limiter are not cleared by this F9 path. Both modes have independent GenerationLimit instances; timer tests cover isolation and per-slot expiry.
+The base-offer vector is at company+0x78. The owned-trailer vector at +0xa0 and its separate limiter are not cleared by this F9 path. F8 retains three independent 48-game-hour slots. F9 uses a monotonic five-real-second cooldown after each completed refresh, including empty results, with no run quota. Session reset clears the cooldown.
 
 ## Verification limits
 

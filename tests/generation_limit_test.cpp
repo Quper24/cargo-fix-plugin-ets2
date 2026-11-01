@@ -1,4 +1,5 @@
 #include "generation_limit.h"
+#include "refresh_cooldown.h"
 #include <cstdlib>
 #include <iostream>
 void Require(bool value) {
@@ -32,12 +33,19 @@ int main() {
     Require(!limit.Blocked() && limit.RemainingUses() == 3);
     limit.RecordSuccess(50); // Loading an older save.
     Require(limit.Deadline(50) == 2930);
-    GenerationLimit freight;
-    for (int i = 0; i < 3; ++i) limit.RecordSuccess(50);
-    Require(limit.Blocked() && freight.RemainingUses() == 3);
-    freight.RecordSuccess(100);
-    Require(freight.RemainingUses() == 2 && limit.Blocked());
-    limit.Refresh(2930);
-    Require(limit.RemainingUses() == 3 && freight.RemainingUses() == 2);
+    RefreshCooldown freight;
+    Require(freight.Remaining(0) == 0);
+    freight.Start(0);
+    Require(freight.Remaining(0) == 5000);
+    Require(freight.Remaining(4999) == 1);
+    Require(freight.Remaining(5000) == 0);
+    for (unsigned i = 1; i <= 10; ++i) {
+        freight.Start(i * 5000);
+        Require(freight.Remaining(i * 5000 + 5000) == 0);
+    }
+    Require(limit.RemainingUses() == 2);
+    freight.Start(60000);
+    freight.Reset();
+    Require(freight.Remaining(60001) == 0);
     std::cout << "Generation limit checks passed\n";
 }

@@ -253,7 +253,7 @@ bool InitializeProfile()
     LoadSettings();
     notifications::Initialize(g_plugin_dir);
     freight::Initialize(g_module_base, g_plugin_dir, Log);
-    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.4.3 experimental: separate cargo/freight limits.");
+    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.4.4 experimental: cargo slots and 5-second freight cooldown.");
     return true;
 }
 
