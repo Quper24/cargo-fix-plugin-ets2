@@ -1,0 +1,10 @@
+^E:\CODEX\CARGO FIX PLUGIN ETS2\BUILD\CMAKEFILES\12F4C28008037ADF04CD1839CF9F2A68\GENERATE.STAMP.RULE
+setlocal
+C:\Users\quper\AppData\Local\Temp\cmake_4_3_6\cmake-4.3.6-windows-x86_64\bin\cmake.exe "-SE:/codex/cargo fix plugin ets2" "-BE:/codex/cargo fix plugin ets2/build" --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file "E:/codex/cargo fix plugin ets2/build/CargoControlETS2.sln"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

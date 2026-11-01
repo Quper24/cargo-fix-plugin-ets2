@@ -1,0 +1,10 @@
+^E:\CODEX\CARGO FIX PLUGIN ETS2\CMAKELISTS.TXT
+setlocal
+C:\Users\quper\AppData\Local\Temp\cmake_4_3_6\cmake-4.3.6-windows-x86_64\bin\cmake.exe "-SE:/codex/cargo fix plugin ets2" "-BE:/codex/cargo fix plugin ets2/build" --check-stamp-file "E:/codex/cargo fix plugin ets2/build/CMakeFiles/generate.stamp"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

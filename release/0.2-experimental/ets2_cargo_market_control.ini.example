@@ -1,0 +1,3 @@
+[General]
+; Optional. 119 = F8. Generation rules are fixed in this build.
+HotkeyVirtualKey=119
