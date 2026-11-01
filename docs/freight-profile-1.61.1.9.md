@@ -1,65 +1,30 @@
-# Base-company offer profile, ETS2 1.61.1.9
+# Freight profile, ETS2 1.61.1.9 — revision after 0.4 crash
 
-This is a record of local binary analysis for the experimental F9 implementation,
-not a stable SCS interface. No CargoMarketFix source is included.
+Executable SHA-256: B70C2357CC56EB5834EE47FEA3C60B2F2D4591383FF2AC479CFD3CD254301B8C.
 
-Executable SHA-256: `B70C2357CC56EB5834EE47FEA3C60B2F2D4591383FF2AC479CFD3CD254301B8C`.
-All RVAs are relative to the executable image base.
+## Confirmed failure in 0.4
 
-## Structures and native routines
+The reported log records F9 completion (29783 offers counted, 5647/6573 companies with five), followed by an assertion in array_t<node_item_t*>: index 2 >= size 2. The latest crash is dated 2026-11-01, build 1.61.1.9, exception C0000025.
 
-- Economy pointer: RVA `0x3046780`. Company pointer array at economy `+0x28`,
-  count at `+0x30`, economy time in game minutes at `+0x19c`.
-- Cargo-market offers: company vector at `+0xa0` (existing owned-trailer mode).
-- Base-company offers: separate vector at `+0x78`, data `+0x80`, count `+0x88`.
-  New F9 orders are added to this base vector. The two UI sections still require
-  in-game verification for visibility, eligibility filters and accepting an order.
-- Company permanent/slot data pointer at `+0x10`: slot flags vector at `+0x90`
-  with 32-bit elements; configured offer count at `+0xc0`.
-  If flag `+0xc4 & 2` is present, parking handles vector starts at `+0xd0`.
-- Native base-offer initialization `0x7cd0f0` allocates objects with `0xaba700`,
-  appends vector slots using `0xf36c0`, and calls `0x7cded0` per slot.
-- `0x7cded0(company, economy, minute, slot_index, forced_regular)` mutates one
-  existing slot and reads the matching slot descriptors. Calling it without first
-  provisioning a new object/slot would replace an existing offer.
-- `0x81cec0(scheduler, economy, expiry_minute, company, slot_index)` schedules a
-  future native refresh. During manual candidate attempts these events are
-  suppressed; one event is added only after a valid offer is committed.
-- Object construction uses the native allocator context at RVA `0x367f918`,
-  indexed by the global at `0x2733298`, and the same reference transitions as
-  the locally inspected native initialization sequence.
+Crash RVAs derived from the reported EXE base: 0x6fd505 (accessor function starts 0x6fd4b0), 0x6fe28e (physical parking updater starts 0x6fe1c0), 0x6fb5f8 and 0x6fa796.
 
-## Hook boundaries
+The node accessor reads the physical node array at permanent company data +0x70, count +0x78. The physical update loop uses parking handles at +0xd8/count +0xe0 and passes each index to the physical node accessor. Extending parking handles and configured slot counts without real map nodes violates this invariant. Cloning slot flags does not add physical map nodes.
 
-All replaced instructions are complete five-byte stack stores, with no relative
-address operands. Each trampoline executes the original store before returning
-to the untouched body. Entry bytes are validated before any patch is installed.
+The 0.4 slot-expansion design is rejected. Do not restore EnsureDescriptors or its parking/configured-count writes as a crash workaround. Version 0.4 binaries are retained only for diagnosis and must not be used.
 
-| Site RVA | Expected bytes | Purpose |
-| --- | --- | --- |
-| `0x7cded0` | `4c 89 4c 24 20` | Prepare descriptors before native slot generation |
-| `0x81cec9` | `48 89 5c 24 10` | Suppress intermediate manual-attempt scheduling |
-| `0x7d0ce0` | `48 89 5c 24 08` | Keep native company clearing within descriptor bounds |
+## 0.4.1 replacement mode
 
-The scheduling hook is nine bytes after the entry, preserving the original
-null-company guard and avoiding relocation of its conditional branch.
-If any hook fails, all F9 hooks are removed and the mode is disabled.
+The user approved replacing F9 offers. For each valid company the implementation now calls the same native sequence seen in economy_refresh (RVA 0x4a0060):
 
-## Persistence and remaining validation
+1. company_jobs_clear(company, economy), RVA 0x7d0ce0.
+2. company_jobs_fill(company, economy), RVA 0x7cd0f0.
 
-Additional offers require matching slot descriptors. F9 extends descriptors with
-native allocation, clones existing slot flags and initializes parking handles.
-Failed additions roll back descriptor counts and release handles using the
-native parking-handle helper (`0x1086f0`). New jobs are never inserted by reusing a
-live slot, so old refresh events cannot overwrite them.
+Clear releases old base-market offers and removes old company refresh events. Fill creates the native/map-defined number of slots. The DLL no longer allocates offer objects directly, appends slots, expands descriptor arrays, clones flags, changes configured counts, or modifies parking arrays. The generator and company-clear entry hooks have been removed.
 
-Descriptors are reconciled after load and before native generation/clearing.
-This is structurally derived, not proof that every load/serialization path has
-been covered. Save/reload, selecting and completing an F9 order, and expiration
-with native automatic refresh must be tested on a disposable profile before
-using this feature on a main save. Loading a save with extra slots without the
-plugin is not validated. Keep a save from before the first F9 use.
+One schedule hook remains at RVA 0x81cec9, expected bytes 48 89 5c 24 10. The prologue trampoline executes this complete stack-store instruction and jumps back to +5, preserving the entry null-company guard. During manual refresh only, successful regular offers receive a 48-game-hour scheduled expiry. Native retries, special events and all automatic calls keep their stock timing. Valid resulting offer timestamp fields +0x48 and +0x60 are normalized to that deadline.
 
-Native automatic generation remains enabled without an attempt-count patch in
-this market. Extra slots are subject to native automatic refresh. The manual
-mode is bounded at 512 slots per company and 20 attempts per requested offer.
+The base-offer vector is at company+0x78. The owned-trailer vector at +0xa0 and its separate limiter are not cleared by this F9 path. Both modes have independent GenerationLimit instances; timer tests cover isolation and per-slot expiry.
+
+## Verification limits
+
+Compilation and offline timer checks do not prove physical vehicle handling, menu eligibility, offer acceptance or save/reload behavior. Test 0.4.1 with a copy of a save from before 0.4 F9. The new build does not repair a save containing incompatible expanded slots from 0.4.

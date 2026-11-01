@@ -1,0 +1,13 @@
+/build/
+/build-*/
+/release/
+/diagnostics/
+/publish/
+/.vs/
+*.obj
+*.pdb
+*.ilk
+*.dmp
+*.log
+game.log.txt
+game.crash.txt

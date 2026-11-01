@@ -11,6 +11,9 @@
       <FullPath>E:\codex\cargo fix plugin ets2\build\Release\generation_limit_check.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>E:\codex\cargo fix plugin ets2\build\Release\notification_preview.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>E:\codex\cargo fix plugin ets2\build\x64\Release\ALL_BUILD</FullPath>
     </ProjectOutput>
   </ProjectOutputs>

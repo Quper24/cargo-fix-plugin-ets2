@@ -10,6 +10,9 @@
     <ClCompile Include="E:\codex\cargo fix plugin ets2\src\freight.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="E:\codex\cargo fix plugin ets2\src\branding.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="E:\codex\cargo fix plugin ets2\CMakeLists.txt" />
@@ -20,6 +23,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="E:\codex\cargo fix plugin ets2\build\branding.rc">
+      <Filter>Source Files</Filter>
+    </ResourceCompile>
     <ResourceCompile Include="E:\codex\cargo fix plugin ets2\src\version.rc">
       <Filter>Source Files</Filter>
     </ResourceCompile>

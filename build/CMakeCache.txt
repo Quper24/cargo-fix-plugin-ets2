@@ -17,6 +17,9 @@
 //Build offline generation-limit checks
 CARGO_CONTROL_BUILD_CHECKS:BOOL=ON
 
+//Build the offscreen notification preview
+CARGO_CONTROL_BUILD_PREVIEW:BOOL=ON
+
 //Path to a program.
 CMAKE_AR:FILEPATH=C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/lib.exe
 

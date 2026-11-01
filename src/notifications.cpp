@@ -1,4 +1,5 @@
 #include "notifications.h"
+#include "branding.h"
 #include <Windows.h>
 #include <ShlObj.h>
 #include <shellapi.h>
@@ -15,25 +16,13 @@ std::filesystem::path home;
 
 bool russian = false;
 int panel_height = 150;
-HFONT MessageFont() {
-    return CreateFontW(-22, 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-        DEFAULT_PITCH, L"Segoe UI");
-}
 LRESULT CALLBACK Procedure(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
     if (message == WM_NCHITTEST) return HTTRANSPARENT;
     if (message == WM_PAINT) {
         PAINTSTRUCT paint{};
         HDC dc = BeginPaint(hwnd, &paint);
         RECT rect{}; GetClientRect(hwnd, &rect);
-        HBRUSH brush = CreateSolidBrush(RGB(25, 30, 40));
-        FillRect(dc, &rect, brush); DeleteObject(brush);
-        SetBkMode(dc, TRANSPARENT); SetTextColor(dc, RGB(255, 235, 180));
-        HFONT font = MessageFont();
-        auto previous = SelectObject(dc, font);
-        InflateRect(&rect, -18, -12);
-        DrawTextW(dc, text.c_str(), -1, &rect, DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
-        SelectObject(dc, previous); DeleteObject(font);
+        branding::Paint(dc, rect, text);
         EndPaint(hwnd, &paint); return 0;
     }
     return DefWindowProcW(hwnd, message, w, l);
@@ -67,13 +56,14 @@ void Initialize(const std::filesystem::path&) {
         LocalFree(args);
     }
     DetectLanguage();
+    branding::Initialize();
     WNDCLASSW cls{};
     cls.lpfnWndProc = Procedure; cls.hInstance = GetModuleHandleW(nullptr);
     cls.lpszClassName = L"CargoControlETS2Notification";
     RegisterClassW(&cls);
     window = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
         cls.lpszClassName, L"Cargo Control ETS2", WS_POPUP, 0, 0, 800, 150, nullptr, nullptr, cls.hInstance, nullptr);
-    if (window) SetLayeredWindowAttributes(window, 0, 240, LWA_ALPHA);
+    if (window) SetLayeredWindowAttributes(window, 0, 245, LWA_ALPHA);
 }
 bool Russian() { DetectLanguage(); return russian; }
 std::wstring Translate(const wchar_t*, const wchar_t* english, const wchar_t* russian_text) {
@@ -85,14 +75,8 @@ void Show(const std::wstring& message) {
     if (window) {
         HDC dc = GetDC(window);
         if (dc) {
-            HFONT font = MessageFont();
-            const auto previous = SelectObject(dc, font);
-            RECT bounds{0, 0, 764, 0};
-            DrawTextW(dc, text.c_str(), -1, &bounds, DT_CALCRECT | DT_CENTER | DT_WORDBREAK | DT_NOPREFIX);
-            panel_height = bounds.bottom + 24;
-            if (panel_height < 110) panel_height = 110;
-            if (panel_height > 260) panel_height = 260;
-            SelectObject(dc, previous); DeleteObject(font); ReleaseDC(window, dc);
+            panel_height = branding::Measure(dc, text);
+            ReleaseDC(window, dc);
         }
         InvalidateRect(window, nullptr, TRUE);
     }
@@ -113,7 +97,9 @@ void Tick() {
 void Shutdown() {
     if (window) DestroyWindow(window);
     window = nullptr;
+    branding::Shutdown();
     UnregisterClassW(L"CargoControlETS2Notification", GetModuleHandleW(nullptr));
 }
 }
+
 

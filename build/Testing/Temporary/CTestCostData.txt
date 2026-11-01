@@ -1,2 +1,2 @@
-generation_limit 6 0.000917083
+generation_limit 10 0.0005694
 ---

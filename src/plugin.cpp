@@ -252,7 +252,7 @@ bool InitializeProfile()
     LoadSettings();
     notifications::Initialize(g_plugin_dir);
     freight::Initialize(g_module_base, g_plugin_dir, Log);
-    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.4 experimental: separate cargo/freight limits.");
+    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.4.2 experimental: separate cargo/freight limits.");
     return true;
 }
 
@@ -420,6 +420,9 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
     }
     return TRUE;
 }
+
+
+
 
 
 
