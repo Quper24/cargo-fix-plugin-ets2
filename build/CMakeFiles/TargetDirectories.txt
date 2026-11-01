@@ -1,5 +1,6 @@
 E:/codex/cargo fix plugin ets2/build/CMakeFiles/ets2_cargo_market_control.dir
 E:/codex/cargo fix plugin ets2/build/CMakeFiles/generation_limit_check.dir
+E:/codex/cargo fix plugin ets2/build/CMakeFiles/company_list_check.dir
 E:/codex/cargo fix plugin ets2/build/CMakeFiles/notification_preview.dir
 E:/codex/cargo fix plugin ets2/build/CMakeFiles/RUN_TESTS.dir
 E:/codex/cargo fix plugin ets2/build/CMakeFiles/ALL_BUILD.dir

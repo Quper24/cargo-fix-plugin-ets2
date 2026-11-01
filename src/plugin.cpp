@@ -14,6 +14,7 @@
 #include "notifications.h"
 #include "generation_limit.h"
 #include "freight.h"
+#include "company_list.h"
 
 #include "scssdk_telemetry.h"
 #include "scssdk_telemetry_event.h"
@@ -252,7 +253,7 @@ bool InitializeProfile()
     LoadSettings();
     notifications::Initialize(g_plugin_dir);
     freight::Initialize(g_module_base, g_plugin_dir, Log);
-    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.4.2 experimental: separate cargo/freight limits.");
+    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.4.3 experimental: separate cargo/freight limits.");
     return true;
 }
 
@@ -281,7 +282,15 @@ void RunGlobalPass()
         notifications::Show(message); return;
     }    const auto array = *reinterpret_cast<std::uintptr_t*>(economy + 0x28);
     const auto count = *reinterpret_cast<std::uint64_t*>(economy + 0x30);
-    if (!array || !count || count > 10000) return;
+    char list_log[180];
+    sprintf_s(list_log, "Cargo request: companies=%llu.", count); Log(list_log);
+    if (!ValidCompanyList(array, count)) {
+        Log("Cargo request rejected: company list is empty, unreadable or exceeds safety bound.");
+        notifications::Show(notifications::Translate(L"InvalidCompanies",
+            L"Company list unavailable. See game.log.txt.",
+            L"Список компаний недоступен. Подробности в game.log.txt."));
+        return;
+    }
 
     const auto deadline = g_limit.Deadline(game_now);
 
@@ -362,7 +371,7 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
         const auto key = TrailerKey(economy);
         const auto array = *reinterpret_cast<std::uintptr_t*>(economy + 0x28);
         const auto count = *reinterpret_cast<std::uint64_t*>(economy + 0x30);
-        if (key && array && count <= 10000) {
+        if (key && ValidCompanyList(array, count)) {
             const auto* companies = reinterpret_cast<const std::uintptr_t*>(array);
             for (std::uint64_t i = 0; i < count; ++i)
                 if (companies[i]) g_offer_trailers[companies[i] + 0xA0] = key;
@@ -375,7 +384,10 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     g_hotkey_was_down = down;
     DWORD foreground_process = 0;
     GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
-    if (g_driving && pressed && foreground_process == GetCurrentProcessId()) RunGlobalPass();
+    if (pressed && foreground_process == GetCurrentProcessId()) {
+        Log(g_driving ? "Cargo hotkey pressed: driving." : "Cargo hotkey ignored: telemetry paused (menu/loading/pause).");
+        if (g_driving) RunGlobalPass();
+    }
     if (g_enabled) freight::Tick(g_driving, g_settings.hotkey);
 }
 void OnPaused(const scs_event_t, const void*, const scs_context_t) { g_driving = false; }

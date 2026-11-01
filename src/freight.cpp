@@ -1,4 +1,5 @@
 #include "freight.h"
+#include "company_list.h"
 #include "generation_limit.h"
 #include "notifications.h"
 #include <Windows.h>
@@ -110,7 +111,15 @@ void Run() {
     }
     const auto array = At<std::uintptr_t>(economy, 0x28);
     const auto count = At<std::uint64_t>(economy, 0x30);
-    if (!array || !count || count > 10000) return;
+    char list_log[180];
+    sprintf_s(list_log, "Freight request: companies=%llu.", count); Log(list_log);
+    if (!ValidCompanyList(array, count)) {
+        Log("Freight request rejected: company list is empty, unreadable or exceeds safety bound.");
+        notifications::Show(notifications::Translate(L"InvalidCompanies",
+            L"Company list unavailable. See game.log.txt.",
+            L"Список компаний недоступен. Подробности в game.log.txt."));
+        return;
+    }
     const auto deadline = limit.Deadline(now);
     const auto started = GetTickCount64();
     std::uint64_t refreshed = 0, companies_refreshed = 0, skipped_invalid = 0;
@@ -201,6 +210,8 @@ void Tick(bool driving, unsigned cargo_key) {
     const bool down = (GetAsyncKeyState(hotkey) & 0x8000) != 0;
     const bool pressed = down && !key_down; key_down = down;
     DWORD foreground_process = 0; GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
+    if (pressed && foreground_process == GetCurrentProcessId())
+        Log(driving ? "Freight hotkey pressed: driving." : "Freight hotkey ignored: telemetry paused (menu/loading/pause).");
     const bool requested = driving && pressed && foreground_process == GetCurrentProcessId();
     if (!requested) return;
     if (!initialized) {
