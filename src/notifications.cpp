@@ -1,5 +1,7 @@
 #include "notifications.h"
 #include "branding.h"
+#include "overlay_ui.h"
+#include <atomic>
 #include <Windows.h>
 #include <ShlObj.h>
 #include <shellapi.h>
@@ -8,25 +10,10 @@
 
 namespace notifications {
 namespace {
-HWND window = nullptr;
-std::wstring text;
-ULONGLONG until = 0;
 std::filesystem::path home;
 
 
-bool russian = false;
-int panel_height = 150;
-LRESULT CALLBACK Procedure(HWND hwnd, UINT message, WPARAM w, LPARAM l) {
-    if (message == WM_NCHITTEST) return HTTRANSPARENT;
-    if (message == WM_PAINT) {
-        PAINTSTRUCT paint{};
-        HDC dc = BeginPaint(hwnd, &paint);
-        RECT rect{}; GetClientRect(hwnd, &rect);
-        branding::Paint(dc, rect, text);
-        EndPaint(hwnd, &paint); return 0;
-    }
-    return DefWindowProcW(hwnd, message, w, l);
-}
+std::atomic<bool> russian{false};
 void DetectLanguage() {
     std::ifstream config(home / L"config.cfg");
     std::string line, language;
@@ -57,49 +44,14 @@ void Initialize(const std::filesystem::path&) {
     }
     DetectLanguage();
     branding::Initialize();
-    WNDCLASSW cls{};
-    cls.lpfnWndProc = Procedure; cls.hInstance = GetModuleHandleW(nullptr);
-    cls.lpszClassName = L"CargoControlETS2Notification";
-    RegisterClassW(&cls);
-    window = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-        cls.lpszClassName, L"Cargo Control ETS2", WS_POPUP, 0, 0, 800, 150, nullptr, nullptr, cls.hInstance, nullptr);
-    if (window) SetLayeredWindowAttributes(window, 0, 245, LWA_ALPHA);
+
 }
-bool Russian() { DetectLanguage(); return russian; }
+bool Russian() { return russian.load(); }
 std::wstring Translate(const wchar_t*, const wchar_t* english, const wchar_t* russian_text) {
     DetectLanguage();
     return russian ? russian_text : english;
 }
-void Show(const std::wstring& message) {
-    text = message; until = GetTickCount64() + 7000;
-    if (window) {
-        HDC dc = GetDC(window);
-        if (dc) {
-            panel_height = branding::Measure(dc, text);
-            ReleaseDC(window, dc);
-        }
-        InvalidateRect(window, nullptr, TRUE);
-    }
-    Tick();
+void Show(const std::wstring& message) { overlay_ui::Notify(message); }
+void Tick() {}
+void Shutdown() { branding::Shutdown(); }
 }
-void Tick() {
-    if (!window) return;
-    HWND foreground = GetForegroundWindow();
-    DWORD process = 0; GetWindowThreadProcessId(foreground, &process);
-    if (GetTickCount64() >= until || process != GetCurrentProcessId()) {
-        ShowWindow(window, SW_HIDE); return;
-    }
-    RECT rect{}; GetWindowRect(foreground, &rect);
-    SetWindowPos(window, HWND_TOPMOST, rect.left + (rect.right - rect.left - 800) / 2,
-        rect.top + 55, 800, panel_height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    UpdateWindow(window);
-}
-void Shutdown() {
-    if (window) DestroyWindow(window);
-    window = nullptr;
-    branding::Shutdown();
-    UnregisterClassW(L"CargoControlETS2Notification", GetModuleHandleW(nullptr));
-}
-}
-
-

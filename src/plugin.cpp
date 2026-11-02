@@ -15,6 +15,7 @@
 #include "generation_limit.h"
 #include "freight.h"
 #include "company_list.h"
+#include "overlay_ui.h"
 
 #include "scssdk_telemetry.h"
 #include "scssdk_telemetry_event.h"
@@ -30,20 +31,13 @@ constexpr std::uintptr_t kEconomyGlobalRva = 0x03046780;
 constexpr std::uintptr_t kGeneratorRva = 0x007CFBA0;
 constexpr std::uintptr_t kRefillRva = 0x007CDDF0;
 constexpr std::uintptr_t kAttemptBranchRva = 0x007CFE05;
-constexpr std::uint8_t kHotkeyDefault = VK_F8;
+
 
 using GenerateFn = void(__fastcall*)(std::uintptr_t company, std::uintptr_t economy);
 using RefillFn = void(__fastcall*)(std::uintptr_t company, std::uintptr_t economy);
 
-struct Settings {
-    std::uint8_t hotkey = kHotkeyDefault;
-
-};
-
-
 scs_log_t g_log = nullptr;
 HMODULE g_plugin_module = nullptr;
-Settings g_settings;
 std::filesystem::path g_plugin_dir;
 std::uintptr_t g_module_base = 0;
 bool g_driving = false;
@@ -114,12 +108,6 @@ bool Sha256File(const std::wstring& path, std::wstring& result)
     result.reserve(digest.size() * 2);
     for (UCHAR b : digest) { result.push_back(hex[b >> 4]); result.push_back(hex[b & 15]); }
     return true;
-}
-
-void LoadSettings()
-{
-    const auto file = g_plugin_dir / L"CargoControlETS2.ini";
-    g_settings.hotkey = static_cast<std::uint8_t>(GetPrivateProfileIntW(L"General", L"HotkeyVirtualKey", kHotkeyDefault, file.c_str()));
 }
 
 bool WriteCode(void* address, const void* bytes, std::size_t length)
@@ -250,15 +238,21 @@ bool InitializeProfile()
     const auto dll = ModulePath(g_plugin_module);
     if (dll.empty()) { RestoreCode(); return false; }
     g_plugin_dir = std::filesystem::path(dll).parent_path();
-    LoadSettings();
     notifications::Initialize(g_plugin_dir);
+    if (!overlay_ui::Initialize(g_plugin_dir, Log)) {
+        RestoreCode();
+        notifications::Shutdown();
+        Log("Plugin disabled because the in-game interface could not be initialized.");
+        return false;
+    }
     freight::Initialize(g_module_base, g_plugin_dir, Log);
-    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.4.4 experimental: cargo slots and 5-second freight cooldown.");
+    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.6.0 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.");
     return true;
 }
 
 void ResetSession()
 {
+    overlay_ui::CancelPending();
     g_limit.Reset();
     freight::Reset();
     Log("session limit reset (telemetry timer restart / economy change).");
@@ -379,16 +373,10 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     }
     g_last_economy = economy;
     notifications::Tick();
-    const bool down = (GetAsyncKeyState(g_settings.hotkey) & 0x8000) != 0;
-    const bool pressed = down && !g_hotkey_was_down;
-    g_hotkey_was_down = down;
-    DWORD foreground_process = 0;
-    GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
-    if (pressed && foreground_process == GetCurrentProcessId()) {
-        Log(g_driving ? "Cargo hotkey pressed: driving." : "Cargo hotkey ignored: telemetry paused (menu/loading/pause).");
-        if (g_driving) RunGlobalPass();
-    }
-    if (g_enabled) freight::Tick(g_driving, g_settings.hotkey);
+    const int action = overlay_ui::Tick(g_driving);
+    if (action == 1) RunGlobalPass();
+    else if (action == 2 && g_enabled) freight::Request(g_driving);
+
 }
 void OnPaused(const scs_event_t, const void*, const scs_context_t) { g_driving = false; }
 void OnStarted(const scs_event_t, const void*, const scs_context_t) { g_driving = true; freight::PrepareForDriving(); }
@@ -413,6 +401,7 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 
 SCSAPI_VOID scs_telemetry_shutdown(void)
 {
+    overlay_ui::Shutdown();
     freight::Shutdown();
     RestoreCode();
     notifications::Shutdown();

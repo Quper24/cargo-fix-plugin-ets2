@@ -1,10 +1,10 @@
-Start testing: Nov 01 18:13 RTZ 2 (çèìà)
+Start testing: Nov 02 10:30 RTZ 2 (çèìà)
 ----------------------------------------------------------
-1/2 Testing: generation_limit
-1/2 Test: generation_limit
+1/5 Testing: generation_limit
+1/5 Test: generation_limit
 Command: "E:/codex/cargo fix plugin ets2/build/Release/generation_limit_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"generation_limit" start time: Nov 01 18:13 RTZ 2 (çèìà)
+"generation_limit" start time: Nov 02 10:30 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 Generation limit checks passed
@@ -12,23 +12,71 @@ Generation limit checks passed
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"generation_limit" end time: Nov 01 18:13 RTZ 2 (çèìà)
+"generation_limit" end time: Nov 02 10:30 RTZ 2 (çèìà)
 "generation_limit" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-2/2 Testing: company_list
-2/2 Test: company_list
+2/5 Testing: hotkey_binding
+2/5 Test: hotkey_binding
+Command: "E:/codex/cargo fix plugin ets2/build/Release/hotkey_binding_check.exe"
+Directory: E:/codex/cargo fix plugin ets2/build
+"hotkey_binding" start time: Nov 02 10:30 RTZ 2 (çèìà)
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"hotkey_binding" end time: Nov 02 10:30 RTZ 2 (çèìà)
+"hotkey_binding" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/5 Testing: notification_lifetime
+3/5 Test: notification_lifetime
+Command: "E:/codex/cargo fix plugin ets2/build/Release/notification_lifetime_check.exe"
+Directory: E:/codex/cargo fix plugin ets2/build
+"notification_lifetime" start time: Nov 02 10:30 RTZ 2 (çèìà)
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"notification_lifetime" end time: Nov 02 10:30 RTZ 2 (çèìà)
+"notification_lifetime" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/5 Testing: overlay_dx11
+4/5 Test: overlay_dx11
+Command: "E:/codex/cargo fix plugin ets2/build/Release/overlay_dx11_check.exe"
+Directory: E:/codex/cargo fix plugin ets2/build
+"overlay_dx11" start time: Nov 02 10:30 RTZ 2 (çèìà)
+Output:
+----------------------------------------------------------
+DirectX 11 in-game interface attached; no desktop overlay windows.
+DirectX 11 Present hook enabled; awaiting the game swap chain.
+DX11 pixels, branded logo, viewport preservation, resize, window procedure restore, Present hook install/remove passed.
+<end of output>
+Test time =   0.28 sec
+----------------------------------------------------------
+Test Passed.
+"overlay_dx11" end time: Nov 02 10:30 RTZ 2 (çèìà)
+"overlay_dx11" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/5 Testing: company_list
+5/5 Test: company_list
 Command: "E:/codex/cargo fix plugin ets2/build/Release/company_list_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"company_list" start time: Nov 01 18:13 RTZ 2 (çèìà)
+"company_list" start time: Nov 02 10:30 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 <end of output>
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"company_list" end time: Nov 01 18:13 RTZ 2 (çèìà)
+"company_list" end time: Nov 02 10:30 RTZ 2 (çèìà)
 "company_list" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Nov 01 18:13 RTZ 2 (çèìà)
+End testing: Nov 02 10:30 RTZ 2 (çèìà)

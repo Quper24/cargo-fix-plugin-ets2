@@ -1,5 +1,5 @@
-[General]
-; Optional. 119 = F8 (owned trailer), 120 = F9 (Freight market / Quick jobs).
-; Choose different virtual-key codes for the two modes.
-HotkeyVirtualKey=119
-FreightHotkeyVirtualKey=120
+; Optional. Menu: Ctrl+Alt+F9. Configure action shortcuts in the menu.
+; Old General hotkey settings are no longer used.
+[Bindings]
+Cargo=0
+Freight=0

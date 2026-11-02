@@ -6,7 +6,7 @@
 
 int wmain(int argc, wchar_t** argv) {
     if (!branding::Initialize()) { std::wcerr << L"Embedded logo failed to load\n"; return 1; }
-    const std::wstring message = L"Рынок грузоперевозок / Заказы агентств\nОбновлено заказов: 12 480. Доступно запусков: 2 из 3.";
+    const std::wstring message = L"Рынок грузоперевозок / Заказы агентств\nОбновлено заказов: 12 480. Следующее обновление доступно через 5 с.";
     HDC dc = CreateCompatibleDC(nullptr);
     const int height = branding::Measure(dc, message);
     BITMAPINFO info{};

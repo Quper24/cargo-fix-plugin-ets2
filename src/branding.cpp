@@ -93,6 +93,15 @@ void Paint(HDC dc, const RECT& bounds, const std::wstring& message) {
     }
 }
 
+void PaintLogo(HDC dc, const RECT& bounds) {
+    if (!logo) return;
+    const int width = bounds.right - bounds.left;
+    const int height = static_cast<int>(width * logo->GetHeight() / logo->GetWidth());
+    Gdiplus::Graphics graphics(dc);
+    graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    graphics.DrawImage(logo, Gdiplus::Rect(bounds.left, bounds.top, width, height));
+}
+
 void Shutdown() {
     delete logo; logo = nullptr;
     if (logo_stream) logo_stream->Release();

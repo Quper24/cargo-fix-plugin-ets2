@@ -6,5 +6,6 @@ constexpr int PanelWidth = 800;
 bool Initialize();
 int Measure(HDC dc, const std::wstring& message);
 void Paint(HDC dc, const RECT& bounds, const std::wstring& message);
+void PaintLogo(HDC dc, const RECT& bounds);
 void Shutdown();
 }

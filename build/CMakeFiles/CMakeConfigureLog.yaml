@@ -995,3 +995,460 @@ events:
       Microsoft (R) Incremental Linker Version 14.44.35229.0
       Copyright (C) Microsoft Corporation.  All rights reserved.
 ...
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerId.cmake:468 (find_file)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerId.cmake:506 (CMAKE_DETERMINE_COMPILER_ID_WRITE)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerId.cmake:8 (CMAKE_DETERMINE_COMPILER_ID_BUILD)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "file"
+    variable: "src_in"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "CMakeCCompilerId.c.in"
+    candidate_directories:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/"
+    found: "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeCCompilerId.c.in"
+    search_context:
+      ENV{PATH}:
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell"
+        - "C:\\Users\\quper\\.codex\\tmp\\arg0-windows\\codex-arg09nO9T9"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\libheif\\libheif\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\jxrlib\\jxrlib\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\poppler\\Library\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\override"
+        - "C:\\Windows\\system32"
+        - "C:\\Windows"
+        - "C:\\Windows\\System32\\Wbem"
+        - "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\"
+        - "C:\\Windows\\System32\\OpenSSH\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\NvDLISR"
+        - "C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common"
+        - "C:\\Program Files\\dotnet\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin"
+        - "C:\\Program Files\\nodejs\\"
+        - "C:\\Program Files\\Git\\cmd"
+        - "C:\\Program Files\\WireGuard\\"
+        - "C:\\Program Files\\WinDirStat\\"
+        - "C:\\Program Files\\PyManager\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin\\copilot-shim"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell"
+        - "C:\\Users\\quper\\AppData\\Local\\Microsoft\\WindowsApps"
+        - "C:\\Users\\quper\\AppData\\Roaming\\npm"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\fallback"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\git\\cmd"
+        - "C:\\Users\\quper\\AppData\\Local\\OpenAI\\Codex\\bin\\57159798136552f4"
+        - "C:\\Users\\quper\\AppData\\Local\\OpenAI\\Codex\\bin\\22cfb1d302613eae"
+      CMAKE_INSTALL_PREFIX: "C:/Program Files/ETS2CargoMarketControl"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler:  
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      ╨Т╨╡╤А╤Б╨╕╤П MSBuild 17.14.60+43b635718 ╨┤╨╗╤П .NET Framework
+      ╨б╨▒╨╛╤А╨║╨░ ╨╜╨░╤З╨░╤В╨░ 02.11.2026 10:26:12.
+      
+      ╨Я╤А╨╛╨╡╨║╤В "E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\4.3.6\\CompilerIdC\\CompilerIdC.vcxproj" ╨▓ ╤Г╨╖╨╗╨╡ 1 (╤Ж╨╡╨╗╨╡╨▓╤Л╨╡ ╨╛╨▒╤К╨╡╨║╤В╤Л ╨┐╨╛ ╤Г╨╝╨╛╨╗╤З╨░╨╜╨╕╤О).
+      PrepareForBuild:
+        ╨б╨╛╨╖╨┤╨░╨╜╨╕╨╡ ╨║╨░╤В╨░╨╗╨╛╨│╨░ "Debug\\".
+        ╨б╤В╤А╤Г╨║╤В╤Г╤А╨╕╤А╨╛╨▓╨░╨╜╨╜╤Л╨╣ ╨▓╤Л╨▓╨╛╨┤ ╨▓╨║╨╗╤О╤З╨╡╨╜. ╨д╨╛╤А╨╝╨░╤В╨╕╤А╨╛╨▓╨░╨╜╨╕╨╡ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕ ╨║╨╛╨╝╨┐╨╕╨╗╤П╤В╨╛╤А╨░ ╨▒╤Г╨┤╨╡╤В ╨╛╤В╤А╨░╨╢╨░╤В╤М ╨╕╨╡╤А╨░╤А╤Е╨╕╤О ╨╛╤И╨╕╨▒╨╛╨║. ╨Я╨╛╨┤╤А╨╛╨▒╨╜╨╡╨╡ ╤Б╨╝. https://aka.ms/cpp/structured-output.
+        ╨б╨╛╨╖╨┤╨░╨╜╨╕╨╡ ╨║╨░╤В╨░╨╗╨╛╨│╨░ "Debug\\CompilerIdC.tlog\\".
+      InitializeBuildStatus:
+        ╨б╨╛╨╖╨┤╨░╨╜╨╕╨╡ "Debug\\CompilerIdC.tlog\\unsuccessfulbuild", ╤В╨░╨║ ╨║╨░╨║ ╨▒╤Л╨╗╨╛ ╨╖╨░╨┤╨░╨╜╨╛ "AlwaysCreate".
+        ╨Ю╨▒╤А╨░╤Й╨╡╨╜╨╕╨╡ ╨║ "Debug\\CompilerIdC.tlog\\unsuccessfulbuild".
+      ClCompile:
+        C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /nologo /W0 /WX- /diagnostics:column /Od /D _MBCS /Gm- /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /Fo"Debug\\\\" /Fd"Debug\\vc143.pdb" /external:W0 /Gd /TC /FC /errorReport:queue CMakeCCompilerId.c
+        CMakeCCompilerId.c
+      Link:
+        C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\link.exe /ERRORREPORT:QUEUE /OUT:".\\CompilerIdC.exe" /INCREMENTAL:NO /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /PDB:".\\CompilerIdC.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:".\\CompilerIdC.lib" /MACHINE:X64 Debug\\CMakeCCompilerId.obj
+        CompilerIdC.vcxproj -> E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\4.3.6\\CompilerIdC\\CompilerIdC.exe
+      PostBuildEvent:
+        for %%i in (cl.exe) do @echo CMAKE_C_COMPILER=%%~$PATH:i
+        :VCEnd
+        CMAKE_C_COMPILER=C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe
+      FinalizeBuildStatus:
+        ╨д╨░╨╣╨╗ "Debug\\CompilerIdC.tlog\\unsuccessfulbuild" ╤Г╨┤╨░╨╗╤П╨╡╤В╤Б╤П.
+        ╨Ю╨▒╤А╨░╤Й╨╡╨╜╨╕╨╡ ╨║ "Debug\\CompilerIdC.tlog\\CompilerIdC.lastbuildstate".
+      ╨б╨▒╨╛╤А╨║╨░ ╨┐╤А╨╛╨╡╨║╤В╨░ "E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\4.3.6\\CompilerIdC\\CompilerIdC.vcxproj" ╨╖╨░╨▓╨╡╤А╤И╨╡╨╜╨░ (╤Ж╨╡╨╗╨╡╨▓╤Л╨╡ ╨╛╨▒╤К╨╡╨║╤В╤Л ╨┐╨╛ ╤Г╨╝╨╛╨╗╤З╨░╨╜╨╕╤О).
+      
+      ╨б╨▒╨╛╤А╨║╨░ ╤Г╤Б╨┐╨╡╤И╨╜╨╛ ╨╖╨░╨▓╨╡╤А╤И╨╡╨╜╨░.
+          ╨Я╤А╨╡╨┤╤Г╨┐╤А╨╡╨╢╨┤╨╡╨╜╨╕╨╣: 0
+          ╨Ю╤И╨╕╨▒╨╛╨║: 0
+      
+      ╨Я╤А╨╛╤И╨╗╨╛ ╨▓╤А╨╡╨╝╨╡╨╜╨╕ 00:00:00.63
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "CompilerIdC.exe"
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "CompilerIdC.vcxproj"
+      
+      The C compiler identification is MSVC, found in:
+        E:/codex/cargo fix plugin ets2/build/CMakeFiles/4.3.6/CompilerIdC/CompilerIdC.exe
+      
+  -
+    kind: "find-v1"
+    backtrace:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeFindBinUtils.cmake:37 (find_program)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeFindBinUtils.cmake:65 (__resolve_tool_path)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeFindBinUtils.cmake:103 (__resolve_linker_path)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "_CMAKE_TOOL_WITH_PATH"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "link"
+    candidate_directories:
+      - "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/"
+      - "C:/Users/quper/.codex/tmp/arg0-windows/codex-arg09nO9T9/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/libheif/libheif/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/jxrlib/jxrlib/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/"
+      - "C:/Windows/System32/"
+      - "C:/Windows/"
+      - "C:/Windows/System32/wbem/"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/"
+      - "C:/Windows/System32/OpenSSH/"
+      - "C:/Program Files/NVIDIA Corporation/NVIDIA App/NvDLISR/"
+      - "C:/Program Files (x86)/NVIDIA Corporation/PhysX/Common/"
+      - "C:/Program Files/dotnet/"
+      - "C:/Program Files/Microsoft VS Code/bin/"
+      - "C:/Program Files/nodejs/"
+      - "C:/Program Files/Git/cmd/"
+      - "C:/Program Files/WireGuard/"
+      - "C:/Program Files/WinDirStat/"
+      - "C:/Program Files/PyManager/"
+      - "C:/Program Files/Microsoft VS Code/bin/copilot-shim/"
+      - "C:/Users/quper/AppData/Local/Microsoft/WindowsApps/"
+      - "C:/Users/quper/AppData/Roaming/npm/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/57159798136552f4/"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/22cfb1d302613eae/"
+    searched_directories:
+      - "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/link.com"
+    found: "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/link.exe"
+    search_context:
+      ENV{PATH}:
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell"
+        - "C:\\Users\\quper\\.codex\\tmp\\arg0-windows\\codex-arg09nO9T9"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\libheif\\libheif\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\jxrlib\\jxrlib\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\poppler\\Library\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\override"
+        - "C:\\Windows\\system32"
+        - "C:\\Windows"
+        - "C:\\Windows\\System32\\Wbem"
+        - "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\"
+        - "C:\\Windows\\System32\\OpenSSH\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\NvDLISR"
+        - "C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common"
+        - "C:\\Program Files\\dotnet\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin"
+        - "C:\\Program Files\\nodejs\\"
+        - "C:\\Program Files\\Git\\cmd"
+        - "C:\\Program Files\\WireGuard\\"
+        - "C:\\Program Files\\WinDirStat\\"
+        - "C:\\Program Files\\PyManager\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin\\copilot-shim"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell"
+        - "C:\\Users\\quper\\AppData\\Local\\Microsoft\\WindowsApps"
+        - "C:\\Users\\quper\\AppData\\Roaming\\npm"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\fallback"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\git\\cmd"
+        - "C:\\Users\\quper\\AppData\\Local\\OpenAI\\Codex\\bin\\57159798136552f4"
+        - "C:\\Users\\quper\\AppData\\Local\\OpenAI\\Codex\\bin\\22cfb1d302613eae"
+      CMAKE_INSTALL_PREFIX: "C:/Program Files/ETS2CargoMarketControl"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeFindBinUtils.cmake:37 (find_program)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeFindBinUtils.cmake:65 (__resolve_tool_path)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeFindBinUtils.cmake:104 (__resolve_linker_path)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:2 (project)"
+    mode: "program"
+    variable: "_CMAKE_TOOL_WITH_PATH"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "lld-link"
+    candidate_directories:
+      - "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/"
+      - "C:/Users/quper/.codex/tmp/arg0-windows/codex-arg09nO9T9/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/libheif/libheif/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/jxrlib/jxrlib/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/"
+      - "C:/Windows/System32/"
+      - "C:/Windows/"
+      - "C:/Windows/System32/wbem/"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/"
+      - "C:/Windows/System32/OpenSSH/"
+      - "C:/Program Files/NVIDIA Corporation/NVIDIA App/NvDLISR/"
+      - "C:/Program Files (x86)/NVIDIA Corporation/PhysX/Common/"
+      - "C:/Program Files/dotnet/"
+      - "C:/Program Files/Microsoft VS Code/bin/"
+      - "C:/Program Files/nodejs/"
+      - "C:/Program Files/Git/cmd/"
+      - "C:/Program Files/WireGuard/"
+      - "C:/Program Files/WinDirStat/"
+      - "C:/Program Files/PyManager/"
+      - "C:/Program Files/Microsoft VS Code/bin/copilot-shim/"
+      - "C:/Users/quper/AppData/Local/Microsoft/WindowsApps/"
+      - "C:/Users/quper/AppData/Roaming/npm/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/57159798136552f4/"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/22cfb1d302613eae/"
+    searched_directories:
+      - "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/lld-link.com"
+      - "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/lld-link.exe"
+      - "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/lld-link"
+      - "C:/Users/quper/.codex/tmp/arg0-windows/codex-arg09nO9T9/lld-link.com"
+      - "C:/Users/quper/.codex/tmp/arg0-windows/codex-arg09nO9T9/lld-link.exe"
+      - "C:/Users/quper/.codex/tmp/arg0-windows/codex-arg09nO9T9/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/libheif/libheif/bin/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/libheif/libheif/bin/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/libheif/libheif/bin/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/jxrlib/jxrlib/bin/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/jxrlib/jxrlib/bin/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/jxrlib/jxrlib/bin/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override/lld-link"
+      - "C:/Windows/System32/lld-link.com"
+      - "C:/Windows/System32/lld-link.exe"
+      - "C:/Windows/System32/lld-link"
+      - "C:/Windows/lld-link.com"
+      - "C:/Windows/lld-link.exe"
+      - "C:/Windows/lld-link"
+      - "C:/Windows/System32/wbem/lld-link.com"
+      - "C:/Windows/System32/wbem/lld-link.exe"
+      - "C:/Windows/System32/wbem/lld-link"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/lld-link.com"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/lld-link.exe"
+      - "C:/Windows/System32/WindowsPowerShell/v1.0/lld-link"
+      - "C:/Windows/System32/OpenSSH/lld-link.com"
+      - "C:/Windows/System32/OpenSSH/lld-link.exe"
+      - "C:/Windows/System32/OpenSSH/lld-link"
+      - "C:/Program Files/NVIDIA Corporation/NVIDIA App/NvDLISR/lld-link.com"
+      - "C:/Program Files/NVIDIA Corporation/NVIDIA App/NvDLISR/lld-link.exe"
+      - "C:/Program Files/NVIDIA Corporation/NVIDIA App/NvDLISR/lld-link"
+      - "C:/Program Files (x86)/NVIDIA Corporation/PhysX/Common/lld-link.com"
+      - "C:/Program Files (x86)/NVIDIA Corporation/PhysX/Common/lld-link.exe"
+      - "C:/Program Files (x86)/NVIDIA Corporation/PhysX/Common/lld-link"
+      - "C:/Program Files/dotnet/lld-link.com"
+      - "C:/Program Files/dotnet/lld-link.exe"
+      - "C:/Program Files/dotnet/lld-link"
+      - "C:/Program Files/Microsoft VS Code/bin/lld-link.com"
+      - "C:/Program Files/Microsoft VS Code/bin/lld-link.exe"
+      - "C:/Program Files/Microsoft VS Code/bin/lld-link"
+      - "C:/Program Files/nodejs/lld-link.com"
+      - "C:/Program Files/nodejs/lld-link.exe"
+      - "C:/Program Files/nodejs/lld-link"
+      - "C:/Program Files/Git/cmd/lld-link.com"
+      - "C:/Program Files/Git/cmd/lld-link.exe"
+      - "C:/Program Files/Git/cmd/lld-link"
+      - "C:/Program Files/WireGuard/lld-link.com"
+      - "C:/Program Files/WireGuard/lld-link.exe"
+      - "C:/Program Files/WireGuard/lld-link"
+      - "C:/Program Files/WinDirStat/lld-link.com"
+      - "C:/Program Files/WinDirStat/lld-link.exe"
+      - "C:/Program Files/WinDirStat/lld-link"
+      - "C:/Program Files/PyManager/lld-link.com"
+      - "C:/Program Files/PyManager/lld-link.exe"
+      - "C:/Program Files/PyManager/lld-link"
+      - "C:/Program Files/Microsoft VS Code/bin/copilot-shim/lld-link.com"
+      - "C:/Program Files/Microsoft VS Code/bin/copilot-shim/lld-link.exe"
+      - "C:/Program Files/Microsoft VS Code/bin/copilot-shim/lld-link"
+      - "C:/Users/quper/AppData/Local/Microsoft/WindowsApps/lld-link.com"
+      - "C:/Users/quper/AppData/Local/Microsoft/WindowsApps/lld-link.exe"
+      - "C:/Users/quper/AppData/Local/Microsoft/WindowsApps/lld-link"
+      - "C:/Users/quper/AppData/Roaming/npm/lld-link.com"
+      - "C:/Users/quper/AppData/Roaming/npm/lld-link.exe"
+      - "C:/Users/quper/AppData/Roaming/npm/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/lld-link"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/lld-link.com"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/lld-link.exe"
+      - "C:/Users/quper/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/lld-link"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/57159798136552f4/lld-link.com"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/57159798136552f4/lld-link.exe"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/57159798136552f4/lld-link"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/22cfb1d302613eae/lld-link.com"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/22cfb1d302613eae/lld-link.exe"
+      - "C:/Users/quper/AppData/Local/OpenAI/Codex/bin/22cfb1d302613eae/lld-link"
+    found: false
+    search_context:
+      ENV{PATH}:
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell"
+        - "C:\\Users\\quper\\.codex\\tmp\\arg0-windows\\codex-arg09nO9T9"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\libheif\\libheif\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\jxrlib\\jxrlib\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\poppler\\Library\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\override"
+        - "C:\\Windows\\system32"
+        - "C:\\Windows"
+        - "C:\\Windows\\System32\\Wbem"
+        - "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\"
+        - "C:\\Windows\\System32\\OpenSSH\\"
+        - "C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\NvDLISR"
+        - "C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common"
+        - "C:\\Program Files\\dotnet\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin"
+        - "C:\\Program Files\\nodejs\\"
+        - "C:\\Program Files\\Git\\cmd"
+        - "C:\\Program Files\\WireGuard\\"
+        - "C:\\Program Files\\WinDirStat\\"
+        - "C:\\Program Files\\PyManager\\"
+        - "C:\\Program Files\\Microsoft VS Code\\bin\\copilot-shim"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\powershell"
+        - "C:\\Users\\quper\\AppData\\Local\\Microsoft\\WindowsApps"
+        - "C:\\Users\\quper\\AppData\\Roaming\\npm"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\fallback"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin"
+        - "C:\\Users\\quper\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\native\\git\\cmd"
+        - "C:\\Users\\quper\\AppData\\Local\\OpenAI\\Codex\\bin\\57159798136552f4"
+        - "C:\\Users\\quper\\AppData\\Local\\OpenAI\\Codex\\bin\\22cfb1d302613eae"
+      CMAKE_INSTALL_PREFIX: "C:/Program Files/ETS2CargoMarketControl"
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "E:/codex/cargo fix plugin ets2/build/CMakeFiles/CMakeScratch/TryCompile-n43ts3"
+      binary: "E:/codex/cargo fix plugin ets2/build/CMakeFiles/CMakeScratch/TryCompile-n43ts3"
+    cmakeVariables:
+      CMAKE_CXX_STDLIB_MODULES_JSON: ""
+      CMAKE_C_FLAGS: "/DWIN32 /D_WINDOWS"
+      CMAKE_C_FLAGS_DEBUG: "/Ob0 /Od /RTC1"
+      CMAKE_EXE_LINKER_FLAGS: "/machine:x64"
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: 'E:/codex/cargo fix plugin ets2/build/CMakeFiles/CMakeScratch/TryCompile-n43ts3'
+        
+        Run Build Command(s): C:/BuildTools/MSBuild/Current/Bin/amd64/MSBuild.exe cmTC_ec8a3.vcxproj /p:Configuration=Debug /p:Platform=x64 /p:VisualStudioVersion=17.0 /v:n
+        ╨Т╨╡╤А╤Б╨╕╤П MSBuild 17.14.60+43b635718 ╨┤╨╗╤П .NET Framework
+        ╨б╨▒╨╛╤А╨║╨░ ╨╜╨░╤З╨░╤В╨░ 02.11.2026 10:26:13.
+        
+        ╨Я╤А╨╛╨╡╨║╤В "E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\CMakeScratch\\TryCompile-n43ts3\\cmTC_ec8a3.vcxproj" ╨▓ ╤Г╨╖╨╗╨╡ 1 (╤Ж╨╡╨╗╨╡╨▓╤Л╨╡ ╨╛╨▒╤К╨╡╨║╤В╤Л ╨┐╨╛ ╤Г╨╝╨╛╨╗╤З╨░╨╜╨╕╤О).
+        PrepareForBuild:
+          ╨б╤В╤А╤Г╨║╤В╤Г╤А╨╕╤А╨╛╨▓╨░╨╜╨╜╤Л╨╣ ╨▓╤Л╨▓╨╛╨┤ ╨▓╨║╨╗╤О╤З╨╡╨╜. ╨д╨╛╤А╨╝╨░╤В╨╕╤А╨╛╨▓╨░╨╜╨╕╨╡ ╨┤╨╕╨░╨│╨╜╨╛╤Б╤В╨╕╨║╨╕ ╨║╨╛╨╝╨┐╨╕╨╗╤П╤В╨╛╤А╨░ ╨▒╤Г╨┤╨╡╤В ╨╛╤В╤А╨░╨╢╨░╤В╤М ╨╕╨╡╤А╨░╤А╤Е╨╕╤О ╨╛╤И╨╕╨▒╨╛╨║. ╨Я╨╛╨┤╤А╨╛╨▒╨╜╨╡╨╡ ╤Б╨╝. https://aka.ms/cpp/structured-output.
+          ╨б╨╛╨╖╨┤╨░╨╜╨╕╨╡ ╨║╨░╤В╨░╨╗╨╛╨│╨░ "E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\CMakeScratch\\TryCompile-n43ts3\\Debug\\".
+          ╨б╨╛╨╖╨┤╨░╨╜╨╕╨╡ ╨║╨░╤В╨░╨╗╨╛╨│╨░ "cmTC_ec8a3.dir\\Debug\\cmTC_ec8a3.tlog\\".
+        InitializeBuildStatus:
+          ╨б╨╛╨╖╨┤╨░╨╜╨╕╨╡ "cmTC_ec8a3.dir\\Debug\\cmTC_ec8a3.tlog\\unsuccessfulbuild", ╤В╨░╨║ ╨║╨░╨║ ╨▒╤Л╨╗╨╛ ╨╖╨░╨┤╨░╨╜╨╛ "AlwaysCreate".
+          ╨Ю╨▒╤А╨░╤Й╨╡╨╜╨╕╨╡ ╨║ "cmTC_ec8a3.dir\\Debug\\cmTC_ec8a3.tlog\\unsuccessfulbuild".
+        ClCompile:
+          C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\CL.exe /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D _MBCS /D "CMAKE_INTDIR=\\"Debug\\"" /RTC1 /MDd /Fo"cmTC_ec8a3.dir\\Debug\\\\" /Fd"cmTC_ec8a3.dir\\Debug\\vc143.pdb" /external:W1 /TC /errorReport:queue "C:\\Users\\quper\\AppData\\Local\\Temp\\cmake_4_3_6\\cmake-4.3.6-windows-x86_64\\share\\cmake-4.3\\Modules\\CMakeCCompilerABI.c"
+          ╨Ю╨┐╤В╨╕╨╝╨╕╨╖╨╕╤А╤Г╤О╤Й╨╕╨╣ ╨║╨╛╨╝╨┐╨╕╨╗╤П╤В╨╛╤А Microsoft (R) C/C++ ╨▓╨╡╤А╤Б╨╕╨╕ 19.44.35229 ╨┤╨╗╤П x64
+          (C) ╨Ъ╨╛╤А╨┐╨╛╤А╨░╤Ж╨╕╤П ╨Ь╨░╨╣╨║╤А╨╛╤Б╨╛╤Д╤В (Microsoft Corporation).  ╨Т╤Б╨╡ ╨┐╤А╨░╨▓╨░ ╨╖╨░╤Й╨╕╤Й╨╡╨╜╤Л.
+          cl /c /Zi /W1 /WX- /diagnostics:column /Od /Ob0 /D _MBCS /D WIN32 /D _WINDOWS /D _MBCS /D "CMAKE_INTDIR=\\"Debug\\"" /RTC1 /MDd /Fo"cmTC_ec8a3.dir\\Debug\\\\" /Fd"cmTC_ec8a3.dir\\Debug\\vc143.pdb" /external:W1 /TC /errorReport:queue "C:\\Users\\quper\\AppData\\Local\\Temp\\cmake_4_3_6\\cmake-4.3.6-windows-x86_64\\share\\cmake-4.3\\Modules\\CMakeCCompilerABI.c"
+          CMakeCCompilerABI.c
+        Link:
+          C:\\BuildTools\\VC\\Tools\\MSVC\\14.44.35207\\bin\\HostX64\\x64\\link.exe /OUT:"E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\CMakeScratch\\TryCompile-n43ts3\\Debug\\cmTC_ec8a3.exe" /INCREMENTAL /ILK:"cmTC_ec8a3.dir\\Debug\\cmTC_ec8a3.ilk" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"E:/codex/cargo fix plugin ets2/build/CMakeFiles/CMakeScratch/TryCompile-n43ts3/Debug/cmTC_ec8a3.pdb" /SUBSYSTEM:CONSOLE /TLBID:1 /IMPLIB:"E:/codex/cargo fix plugin ets2/build/CMakeFiles/CMakeScratch/TryCompile-n43ts3/Debug/cmTC_ec8a3.lib" /MACHINE:X64  /machine:x64 cmTC_ec8a3.dir\\Debug\\CMakeCCompilerABI.obj
+          cmTC_ec8a3.vcxproj -> E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\CMakeScratch\\TryCompile-n43ts3\\Debug\\cmTC_ec8a3.exe
+        FinalizeBuildStatus:
+          ╨д╨░╨╣╨╗ "cmTC_ec8a3.dir\\Debug\\cmTC_ec8a3.tlog\\unsuccessfulbuild" ╤Г╨┤╨░╨╗╤П╨╡╤В╤Б╤П.
+          ╨Ю╨▒╤А╨░╤Й╨╡╨╜╨╕╨╡ ╨║ "cmTC_ec8a3.dir\\Debug\\cmTC_ec8a3.tlog\\cmTC_ec8a3.lastbuildstate".
+        ╨б╨▒╨╛╤А╨║╨░ ╨┐╤А╨╛╨╡╨║╤В╨░ "E:\\codex\\cargo fix plugin ets2\\build\\CMakeFiles\\CMakeScratch\\TryCompile-n43ts3\\cmTC_ec8a3.vcxproj" ╨╖╨░╨▓╨╡╤А╤И╨╡╨╜╨░ (╤Ж╨╡╨╗╨╡╨▓╤Л╨╡ ╨╛╨▒╤К╨╡╨║╤В╤Л ╨┐╨╛ ╤Г╨╝╨╛╨╗╤З╨░╨╜╨╕╤О).
+        
+        ╨б╨▒╨╛╤А╨║╨░ ╤Г╤Б╨┐╨╡╤И╨╜╨╛ ╨╖╨░╨▓╨╡╤А╤И╨╡╨╜╨░.
+            ╨Я╤А╨╡╨┤╤Г╨┐╤А╨╡╨╢╨┤╨╡╨╜╨╕╨╣: 0
+            ╨Ю╤И╨╕╨▒╨╛╨║: 0
+        
+        ╨Я╤А╨╛╤И╨╗╨╛ ╨▓╤А╨╡╨╝╨╡╨╜╨╕ 00:00:00.44
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerABI.cmake:253 (message)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?))("|,| |$)]
+        linker tool for 'C': C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/HostX64/x64/link.exe
+        implicit libs: []
+        implicit objs: []
+        implicit dirs: []
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/Internal/CMakeDetermineLinkerId.cmake:38 (message)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeDetermineCompilerABI.cmake:299 (cmake_determine_linker_id)"
+      - "C:/Users/quper/AppData/Local/Temp/cmake_4_3_6/cmake-4.3.6-windows-x86_64/share/cmake-4.3/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the C compiler's linker: "C:/BuildTools/VC/Tools/MSVC/14.44.35207/bin/HostX64/x64/link.exe" "-v"
+      Microsoft (R) Incremental Linker Version 14.44.35229.0
+      Copyright (C) Microsoft Corporation.  All rights reserved.
+...

@@ -14,7 +14,16 @@
       <FullPath>E:\codex\cargo fix plugin ets2\build\Release\generation_limit_check.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>E:\codex\cargo fix plugin ets2\build\Release\hotkey_binding_check.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\codex\cargo fix plugin ets2\build\Release\notification_lifetime_check.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>E:\codex\cargo fix plugin ets2\build\Release\notification_preview.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
+      <FullPath>E:\codex\cargo fix plugin ets2\build\Release\overlay_dx11_check.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
       <FullPath>E:\codex\cargo fix plugin ets2\build\x64\Release\ALL_BUILD</FullPath>

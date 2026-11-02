@@ -23,8 +23,7 @@ using Schedule = void(__fastcall*)(std::uintptr_t, std::uintptr_t, std::uint32_t
 std::uintptr_t base = 0;
 Logger logger = nullptr;
 RefreshCooldown cooldown;
-unsigned hotkey = VK_F9;
-bool initialized = false, key_down = false;
+bool initialized = false;
 std::uintptr_t manual_company = 0;
 
 
@@ -192,9 +191,6 @@ void Run() {
 
 bool Initialize(std::uintptr_t module, const std::filesystem::path& directory, Logger log) {
     base = module; logger = log;
-    hotkey = GetPrivateProfileIntW(L"General", L"FreightHotkeyVirtualKey", VK_F9,
-                                  (directory / L"CargoControlETS2.ini").c_str());
-    if (!hotkey || hotkey > 255) hotkey = VK_F9;
     if (!schedule_hook.Install(0x81cec9, {0x48,0x89,0x5c,0x24,0x10}, reinterpret_cast<void*>(&ScheduleBridge))) {
         Log("Freight mode disabled: native schedule signature/hook failed validation.");
         return false;
@@ -203,24 +199,14 @@ bool Initialize(std::uintptr_t module, const std::filesystem::path& directory, L
     Log("Freight / Quick jobs stock refresh enabled; physical slot counts remain native.");
     return true;
 }
-void Reset() { cooldown.Reset(); key_down = false; }
+void Reset() { cooldown.Reset(); }
 void PrepareForDriving() {}
-void Tick(bool driving, unsigned cargo_key) {
-    const bool down = (GetAsyncKeyState(hotkey) & 0x8000) != 0;
-    const bool pressed = down && !key_down; key_down = down;
-    DWORD foreground_process = 0; GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
-    if (pressed && foreground_process == GetCurrentProcessId())
-        Log(driving ? "Freight hotkey pressed: driving." : "Freight hotkey ignored: telemetry paused (menu/loading/pause).");
-    const bool requested = driving && pressed && foreground_process == GetCurrentProcessId();
-    if (!requested) return;
+void Request(bool driving) {
+    if (!driving) return;
     if (!initialized) {
         notifications::Show(notifications::Translate(L"FreightDisabled",
-            L"Freight mode is unavailable. Check game.log.txt for the initialization error.",
-            L"Новый режим недоступен. Причина ошибки инициализации указана в game.log.txt."));
-    } else if (hotkey == cargo_key) {
-        notifications::Show(notifications::Translate(L"KeyConflict",
-            L"Both modes use the same key. Assign different hotkeys in CargoControlETS2.ini.",
-            L"У режимов совпадают горячие клавиши. Назначьте разные клавиши в CargoControlETS2.ini."));
+            L"Freight mode is unavailable. See game.log.txt.",
+            L"Обновление заказов недоступно. Подробности в game.log.txt."));
     } else Run();
 }
 void Shutdown() {
