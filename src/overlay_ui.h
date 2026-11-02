@@ -11,6 +11,6 @@ void Notify(const std::wstring& text);
 int Tick(bool driving);
 void CancelPending();
 void Shutdown();
-struct Diagnostics { std::uint64_t frames; std::uint64_t present_calls; bool logo; bool ready; };
+struct Diagnostics { std::uint64_t frames; std::uint64_t present_calls; std::uint64_t input_calls; bool logo; bool ready; };
 Diagnostics Inspect();
 }

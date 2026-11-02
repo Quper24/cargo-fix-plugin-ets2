@@ -1,7 +1,8 @@
-generation_limit 19 0.000306763
-company_list 9 0.000653156
-hotkey_binding 6 0.0008099
+generation_limit 21 0.000232762
+company_list 11 0.000446782
+hotkey_binding 8 0.00048755
 control_menu 3 0.0068774
-notification_lifetime 3 0.00157317
-overlay_dx11 1 0.276623
+notification_lifetime 5 0.00078762
+overlay_dx11 3 0.0944327
+menu_pointer 2 0.00182865
 ---

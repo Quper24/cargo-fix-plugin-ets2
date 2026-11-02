@@ -3,6 +3,8 @@
 #include "branding.h"
 #include "hotkey_binding.h"
 #include "notification_lifetime.h"
+#include "menu_pointer.h"
+#include "brand_palette.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -38,17 +40,27 @@ void* present_site = nullptr;
 using Present = HRESULT (STDMETHODCALLTYPE*)(IDXGISwapChain*,UINT,UINT);
 Present previous_present = nullptr;
 bool hook_owned = false, minhook_owned = false, menu = false, menu_was_down = false;
-bool cargo_down = false, freight_down = false, clipped = false, release_actions = true;
-RECT previous_clip{};
+bool cargo_down = false, freight_down = false, release_actions = true;
+MenuPointer pointer;
+enum class MouseSource { None, State, Buffered };
+MouseSource mouse_source = MouseSource::None;
+void* mouse_state_site = nullptr;
+void* mouse_data_site = nullptr;
+bool mouse_state_hook = false, mouse_data_hook = false;
+using MouseState = HRESULT (STDMETHODCALLTYPE*)(void*,DWORD,LPVOID);
+using MouseData = HRESULT (STDMETHODCALLTYPE*)(void*,DWORD,LPDIDEVICEOBJECTDATA,LPDWORD,DWORD);
+MouseState previous_mouse_state = nullptr;
+MouseData previous_mouse_data = nullptr;
+ULONGLONG last_frame_time = 0;
 WORD cargo=0, freight=0, draft_cargo=0, draft_freight=0;
 int capture = 0;
 std::array<bool,256> keys{};
 std::string notice, error;
 NotificationLifetime lifetime;
 std::uint64_t rendered = 0;
-std::atomic<std::uint64_t> present_calls{0};
-const ImVec4 accent{180.f/255,221.f/255,171.f/255,1};
-constexpr ImU32 white=IM_COL32(244,247,245,255), muted=IM_COL32(151,166,155,255), green=IM_COL32(180,221,171,255);
+std::atomic<std::uint64_t> present_calls{0}, input_calls{0};
+const ImVec4 accent{brand_palette::Red/255.f,brand_palette::Green/255.f,brand_palette::Blue/255.f,1};
+constexpr ImU32 white=IM_COL32(255,255,255,255), muted=IM_COL32(200,200,200,255), green=IM_COL32(brand_palette::Red,brand_palette::Green,brand_palette::Blue,255);
 void Log(const char* s) { if (logger) logger(s); }
 std::string Utf8(const std::wstring& s) {
     int n=WideCharToMultiByte(CP_UTF8,0,s.c_str(),static_cast<int>(s.size()),nullptr,0,nullptr,nullptr);
@@ -64,24 +76,26 @@ struct ContextScope {
 };
 void CloseMenu() {
     menu=false; capture=0; release_actions=true;
-    if(clipped) { ClipCursor(&previous_clip); clipped=false; }
+    if(context) { ContextScope scope;ImGui::GetIO().ClearInputMouse(); }
 }
 void OpenMenu() {
     menu=true; capture=0; error.clear(); draft_cargo=cargo; draft_freight=freight;
-    clipped=GetClipCursor(&previous_clip)!=0; ClipCursor(nullptr);
+    RECT bounds{};GetClientRect(game,&bounds);pointer.Begin(float(bounds.right),float(bounds.bottom));mouse_source=MouseSource::None;
+    ImGui::GetIO().ClearInputMouse();
+    Log("Menu opened: relative DirectInput cursor enabled; system cursor position is ignored.");
 }
 LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
     std::lock_guard<std::recursive_mutex> guard(mutex);
     if(context && !stopping) {
         ContextScope scope;
-        ImGui_ImplWin32_WndProcHandler(hwnd,msg,w,l);
+        const bool mouse_message=(msg>=WM_MOUSEFIRST && msg<=WM_MOUSELAST) || msg==WM_MOUSELEAVE || msg==WM_NCMOUSEMOVE || msg==WM_NCMOUSELEAVE;
+        if(!(menu && mouse_message)) ImGui_ImplWin32_WndProcHandler(hwnd,msg,w,l);
         if(menu) {
-            if(msg==WM_INPUT) return DefWindowProcW(hwnd,msg,w,l);
             if((msg>=WM_MOUSEFIRST && msg<=WM_MOUSELAST) || (msg>=WM_KEYFIRST && msg<=WM_KEYLAST) || msg==WM_CHAR) return 0;
         }
         if(msg==WM_KILLFOCUS) CloseMenu();
     }
-    return CallWindowProcW(previous_proc,hwnd,msg,w,l);
+    return previous_proc ? CallWindowProcW(previous_proc,hwnd,msg,w,l) : DefWindowProcW(hwnd,msg,w,l);
 }
 void ReleaseRenderer() {
     CloseMenu();
@@ -127,9 +141,10 @@ bool StartRenderer(IDXGISwapChain* chain,const DXGI_SWAP_CHAIN_DESC& desc) {
         if(!font) font=io.Fonts->AddFontDefault();
         if(!ImGui_ImplWin32_Init(desc.OutputWindow) || !ImGui_ImplDX11_Init(device.Get(),gpu.Get())) { ReleaseRenderer(); return false; }
         ImGui::StyleColorsDark();auto& style=ImGui::GetStyle();style.WindowRounding=14;style.FrameRounding=8;style.WindowBorderSize=1;
-        style.Colors[ImGuiCol_WindowBg]={0,0,0,1};style.Colors[ImGuiCol_Border]={.16f,.23f,.18f,1};
-        style.Colors[ImGuiCol_Button]={.075f,.1f,.08f,1};style.Colors[ImGuiCol_ButtonHovered]={.15f,.22f,.17f,1};
-        style.Colors[ImGuiCol_ButtonActive]={.2f,.29f,.22f,1};style.Colors[ImGuiCol_Text]={.96f,.98f,.96f,1};
+        style.Colors[ImGuiCol_WindowBg]={0,0,0,1};style.Colors[ImGuiCol_Border]={.24f,.24f,.24f,1};
+        style.Colors[ImGuiCol_Button]={.09f,.09f,.09f,1};style.Colors[ImGuiCol_ButtonHovered]={.19f,.19f,.19f,1};
+        style.Colors[ImGuiCol_ButtonActive]={.27f,.27f,.27f,1};style.Colors[ImGuiCol_Text]={1,1,1,1};
+        style.Colors[ImGuiCol_NavCursor]=accent;style.Colors[ImGuiCol_TextSelectedBg]={accent.x,accent.y,accent.z,.4f};
         game=desc.OutputWindow;
         SetLastError(0);previous_proc=reinterpret_cast<WNDPROC>(SetWindowLongPtrW(game,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(WindowProc)));
         if(!previous_proc) { ReleaseRenderer();return false; }
@@ -174,11 +189,11 @@ void DrawMenu() {
     const auto origin=ImGui::GetWindowPos(); auto* draw=ImGui::GetWindowDrawList();
     auto pos=[&](float x,float y){return ImVec2(origin.x+x*scale,origin.y+y*scale);};
     auto text=[&](float x,float y,float size,ImU32 color,const char* value){draw->AddText(font,size*scale,pos(x,y),color,value,nullptr,0);};
-    auto card=[&](float x,float y,float w,float h){draw->AddRectFilled(pos(x,y),pos(x+w,y+h),IM_COL32(19,25,21,255),14*scale);draw->AddRect(pos(x,y),pos(x+w,y+h),IM_COL32(44,59,47,255),14*scale);};
+    auto card=[&](float x,float y,float w,float h){draw->AddRectFilled(pos(x,y),pos(x+w,y+h),IM_COL32(14,14,14,255),14*scale);draw->AddRect(pos(x,y),pos(x+w,y+h),IM_COL32(65,65,65,255),14*scale);};
     auto button=[&](const char* label,float x,float y,float w,float h,bool primary=false){
         ImGui::SetCursorScreenPos(pos(x,y));ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{8*scale,8*scale});
         ImGui::SetWindowFontScale(scale*.5f);
-        if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(.78f,.93f,.75f,1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(.52f,.69f,.49f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(.05f,.1f,.06f,1)); }
+        if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(accent.x+(1-accent.x)*.15f,accent.y+(1-accent.y)*.15f,accent.z+(1-accent.z)*.15f,1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(accent.x*.85f,accent.y*.85f,accent.z*.85f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1)); }
         bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar();return hit;
     };
     text(32,25,14,green,"QUPER SIMULATOR");text(30,54,34,white,"Cargo Control ETS2");
@@ -202,7 +217,7 @@ void DrawMenu() {
     if(button(Tr("Clear##freight","Сброс##freight"),784,458,68,38)){draft_freight=0;capture=0;}
     text(32,518,15,muted,Tr("Select a field and press a shortcut. Clear disables the binding.","Выберите поле и нажмите сочетание. «Сброс» отключает назначение."));
     text(32,545,15,muted,Tr("Stop your truck first. Menu: Ctrl + Alt + F9.","Перед генерацией остановите грузовик. Меню: Ctrl + Alt + F9."));
-    text(32,599,14,error.empty()?muted:IM_COL32(255,185,145,255),error.empty()?Tr("Save to apply your shortcuts.","Изменения применяются после сохранения."):error.c_str());
+    text(32,599,14,error.empty()?muted:white,error.empty()?Tr("Save to apply your shortcuts.","Изменения применяются после сохранения."):error.c_str());
     if(button(Tr("Save","Сохранить"),576,588,142,44,true)) {
         if(!hotkeys::PairAllowed(draft_cargo,draft_freight))error=Tr("Choose different shortcuts.","Назначьте разные сочетания.");
         else { wchar_t values[160]{};swprintf_s(values,L"Cargo=%u%cFreight=%u%c",unsigned(draft_cargo),0,unsigned(draft_freight),0);
@@ -227,6 +242,66 @@ void DrawNotice() {
     if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),{p.x+w-152,p.y+h-116},{p.x+w-20,p.y+h-19});
     ImGui::End();
 }
+bool IsMouse(void* instance) {
+    DIDEVICEINSTANCEW wide{};wide.dwSize=sizeof(wide);
+    auto* mouse=static_cast<IDirectInputDevice8W*>(instance);
+    if(SUCCEEDED(mouse->GetDeviceInfo(&wide)))return IsEqualGUID(wide.guidInstance,GUID_SysMouse) || GET_DIDEVICE_TYPE(wide.dwDevType)==DI8DEVTYPE_MOUSE;
+    DIDEVICEINSTANCEA ansi{};ansi.dwSize=sizeof(ansi);
+    return SUCCEEDED(static_cast<IDirectInputDevice8A*>(instance)->GetDeviceInfo(&ansi)) && GET_DIDEVICE_TYPE(ansi.dwDevType)==DI8DEVTYPE_MOUSE;
+}
+void FeedButtons(const std::array<bool,5>& before) {
+    auto& io=ImGui::GetIO();io.AddMousePosEvent(pointer.x,pointer.y);
+    for(unsigned i=0;i<before.size();++i)if(before[i]!=pointer.buttons[i])io.AddMouseButtonEvent(i,pointer.buttons[i]);
+    if(pointer.wheel) {io.AddMouseWheelEvent(0,pointer.wheel);pointer.wheel=0;}
+}
+HRESULT STDMETHODCALLTYPE MouseStateBridge(void* instance,DWORD size,LPVOID bytes) {
+    ++callbacks;++input_calls;const HRESULT result=previous_mouse_state(instance,size,bytes);
+    if(!stopping && SUCCEEDED(result) && bytes && (size==sizeof(DIMOUSESTATE)||size==sizeof(DIMOUSESTATE2))) {
+        std::lock_guard<std::recursive_mutex> guard(mutex);
+        if(context && menu && GetForegroundWindow()==game && IsMouse(instance)) {
+            ContextScope scope;
+            if(mouse_source==MouseSource::None){mouse_source=MouseSource::State;Log("Menu mouse input: DirectInput state.");}
+            const auto before=pointer.buttons;pointer.State(bytes,size,mouse_source==MouseSource::State);FeedButtons(before);
+        }
+    }
+    --callbacks;return result;
+}
+HRESULT STDMETHODCALLTYPE MouseDataBridge(void* instance,DWORD stride,LPDIDEVICEOBJECTDATA bytes,LPDWORD count,DWORD flags) {
+    ++callbacks;++input_calls;const DWORD capacity=count?*count:0;
+    const HRESULT result=previous_mouse_data(instance,stride,bytes,count,flags);
+    if(!stopping && SUCCEEDED(result) && bytes && count && *count<=capacity && *count<=65536 && (stride==sizeof(DIDEVICEOBJECTDATA)||stride==16)) {
+        std::lock_guard<std::recursive_mutex> guard(mutex);
+        if(context && menu && GetForegroundWindow()==game && IsMouse(instance)) {
+            ContextScope scope;
+            if(mouse_source==MouseSource::None && *count && !(flags&DIGDD_PEEK)){mouse_source=MouseSource::Buffered;Log("Menu mouse input: buffered DirectInput.");}
+            for(DWORD i=0;i<*count;++i) {
+                auto* record=reinterpret_cast<unsigned char*>(bytes)+i*stride;
+                DIDEVICEOBJECTDATA event{};std::memcpy(&event,record,stride);
+                const auto before=pointer.buttons;pointer.Event(event,mouse_source==MouseSource::Buffered && !(flags&DIGDD_PEEK));FeedButtons(before);
+                std::memcpy(record,&event,stride);
+            }
+        }
+    }
+    --callbacks;return result;
+}
+bool InstallMouseHooks() {
+    ComPtr<IDirectInput8W> input;ComPtr<IDirectInputDevice8W> mouse;
+    if(FAILED(DirectInput8Create(GetModuleHandleW(nullptr),DIRECTINPUT_VERSION,IID_IDirectInput8W,reinterpret_cast<void**>(input.GetAddressOf()),nullptr)) ||
+       FAILED(input->CreateDevice(GUID_SysMouse,&mouse,nullptr)))return false;
+    auto** table=*reinterpret_cast<void***>(mouse.Get());mouse_state_site=table[9];mouse_data_site=table[10];
+    if(MH_CreateHook(mouse_state_site,reinterpret_cast<void*>(MouseStateBridge),reinterpret_cast<void**>(&previous_mouse_state))!=MH_OK)return false;
+    mouse_state_hook=true;
+    if(MH_CreateHook(mouse_data_site,reinterpret_cast<void*>(MouseDataBridge),reinterpret_cast<void**>(&previous_mouse_data))!=MH_OK)return false;
+    mouse_data_hook=true;
+    return MH_EnableHook(mouse_state_site)==MH_OK && MH_EnableHook(mouse_data_site)==MH_OK;
+}
+void DisableMouseHooks() {
+    if(mouse_state_hook)MH_DisableHook(mouse_state_site);if(mouse_data_hook)MH_DisableHook(mouse_data_site);
+}
+void RemoveMouseHooks() {
+    if(mouse_state_hook)MH_RemoveHook(mouse_state_site);if(mouse_data_hook)MH_RemoveHook(mouse_data_site);
+    mouse_state_hook=mouse_data_hook=false;mouse_state_site=mouse_data_site=nullptr;
+}
 HRESULT STDMETHODCALLTYPE PresentBridge(IDXGISwapChain* chain,UINT sync,UINT flags) {
     ++callbacks; ++present_calls;
     if(!stopping && !(flags&DXGI_PRESENT_TEST)) RenderFrame(chain);
@@ -249,7 +324,13 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu) {
     ContextScope scope;
     const bool focused=GetForegroundWindow()==game || allow_hidden;
     if(!allow_hidden) Poll(focused);
-    ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();auto& io=ImGui::GetIO();io.MouseDrawCursor=menu&&focused;
+    ImGui_ImplDX11_NewFrame();auto& io=ImGui::GetIO();
+    if(menu&&focused) {
+        pointer.Resize(float(rect.right),float(rect.bottom));io.DisplaySize={float(rect.right),float(rect.bottom)};
+        io.AddMousePosEvent(pointer.x,pointer.y); // Never poll the game's recentered OS cursor.
+    } else ImGui_ImplWin32_NewFrame();
+    const auto now_tick=GetTickCount64();io.DeltaTime=last_frame_time?std::clamp(float(now_tick-last_frame_time)/1000.f,.001f,.25f):1.f/60;
+    last_frame_time=now_tick;io.MouseDrawCursor=menu&&focused;
     if(allow_hidden) { io.ClearInputKeys();io.ClearInputMouse();io.MousePos={-FLT_MAX,-FLT_MAX}; }
     ImGui::NewFrame();
     const bool visible_notice=focused&&!menu&&!preview_menu&&!notice.empty();
@@ -258,7 +339,13 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu) {
     ImGui::Render();
     if(ImGui::GetDrawData()->TotalVtxCount==0)return;
     ComPtr<ID3D11Texture2D> backbuffer;ComPtr<ID3D11RenderTargetView> target;
-    if(FAILED(chain->GetBuffer(0,IID_PPV_ARGS(&backbuffer))) || FAILED(device->CreateRenderTargetView(backbuffer.Get(),nullptr,&target)))return;
+    if(FAILED(chain->GetBuffer(0,IID_PPV_ARGS(&backbuffer))))return;
+    D3D11_TEXTURE2D_DESC back_desc{};backbuffer->GetDesc(&back_desc);
+    D3D11_RENDER_TARGET_VIEW_DESC view{};view.ViewDimension=back_desc.SampleDesc.Count>1?D3D11_RTV_DIMENSION_TEXTURE2DMS:D3D11_RTV_DIMENSION_TEXTURE2D;
+    view.Format=back_desc.Format;
+    if(view.Format==DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)view.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
+    if(view.Format==DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)view.Format=DXGI_FORMAT_B8G8R8A8_UNORM;
+    if(FAILED(device->CreateRenderTargetView(backbuffer.Get(),&view,&target)))return;
     ID3D11RenderTargetView* previous[8]{};ComPtr<ID3D11DepthStencilView> depth;
     gpu->OMGetRenderTargets(8,previous,depth.GetAddressOf());
     auto* rtv=target.Get();gpu->OMSetRenderTargets(1,&rtv,nullptr);
@@ -271,7 +358,7 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
     cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,ini.c_str()));
     freight=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Freight",0,ini.c_str()));
     if(cargo==hotkeys::Menu)cargo=0;if(!hotkeys::PairAllowed(cargo,freight))freight=0;
-    stopping=false;requested=0;menu=false;capture=0;rendered=0;present_calls=0;
+    stopping=false;requested=0;menu=false;capture=0;rendered=0;present_calls=0;input_calls=0;
     if(!install_hook)return true;
     WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"QSCargoDxProbe";
     RegisterClassW(&cls);HWND probe=CreateWindowExW(0,cls.lpszClassName,L"",WS_POPUP,0,0,8,8,nullptr,nullptr,cls.hInstance,nullptr);
@@ -287,13 +374,13 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
         const auto init=MH_Initialize();minhook_owned=init==MH_OK;
         if(init==MH_OK || init==MH_ERROR_ALREADY_INITIALIZED) {
             if(MH_CreateHook(present_site,reinterpret_cast<void*>(PresentBridge),reinterpret_cast<void**>(&previous_present))==MH_OK) {
-                hook_owned=true;ok=MH_EnableHook(present_site)==MH_OK;
+                hook_owned=true;ok=InstallMouseHooks() && MH_EnableHook(present_site)==MH_OK;
             }
         }
     }
     chain.Reset();temp_context.Reset();temp_device.Reset();if(probe)DestroyWindow(probe);UnregisterClassW(cls.lpszClassName,cls.hInstance);
     if(!ok) {
-        if(hook_owned)MH_RemoveHook(present_site);if(minhook_owned)MH_Uninitialize();hook_owned=minhook_owned=false;
+        DisableMouseHooks();RemoveMouseHooks();if(hook_owned)MH_RemoveHook(present_site);if(minhook_owned)MH_Uninitialize();hook_owned=minhook_owned=false;
         stopping=true;Log("DirectX 11 interface failed to initialize. No external-window fallback enabled.");
     } else Log("DirectX 11 Present hook enabled; awaiting the game swap chain.");
     return ok;
@@ -301,14 +388,15 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
 void Notify(const std::wstring& text) { std::lock_guard<std::recursive_mutex> guard(mutex);notice=Utf8(text);lifetime.Start(); }
 int Tick(bool active) { driving=active;return active?requested.exchange(0):0; }
 void CancelPending() { requested=0; }
-Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),logo!=nullptr,context!=nullptr}; }
+Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr}; }
 void Shutdown() {
     stopping=true;
+    DisableMouseHooks();
     if(hook_owned)MH_DisableHook(present_site);
     // Disabling prevents new entries. Let already-running Present calls finish before freeing their trampoline.
     while(callbacks.load())Sleep(1);
     std::lock_guard<std::recursive_mutex> guard(mutex);ReleaseRenderer();
-    if(hook_owned)MH_RemoveHook(present_site);if(minhook_owned)MH_Uninitialize();hook_owned=minhook_owned=false;
+    RemoveMouseHooks();if(hook_owned)MH_RemoveHook(present_site);if(minhook_owned)MH_Uninitialize();hook_owned=minhook_owned=false;
     requested=0;driving=false;notice.clear();keys.fill(false);menu_was_down=cargo_down=freight_down=false;
     previous_present=nullptr;present_site=nullptr;logger=nullptr;
 }

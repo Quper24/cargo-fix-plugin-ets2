@@ -246,7 +246,7 @@ bool InitializeProfile()
         return false;
     }
     freight::Initialize(g_module_base, g_plugin_dir, Log);
-    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.6.0 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.");
+    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.6.1 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.");
     return true;
 }
 

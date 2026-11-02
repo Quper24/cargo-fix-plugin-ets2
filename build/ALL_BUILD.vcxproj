@@ -190,6 +190,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <Project>{A5202213-771A-389B-83D9-520A82C941ED}</Project>
       <Name>hotkey_binding_check</Name>
     </ProjectReference>
+    <ProjectReference Include="E:\codex\cargo fix plugin ets2\build\menu_pointer_check.vcxproj">
+      <Project>{F384F2CD-2608-3B2F-A43B-08FDF224E0B5}</Project>
+      <Name>menu_pointer_check</Name>
+    </ProjectReference>
     <ProjectReference Include="E:\codex\cargo fix plugin ets2\build\notification_lifetime_check.vcxproj">
       <Project>{8EC359F4-074F-336B-8DFC-F1BB2D3FE860}</Project>
       <Name>notification_lifetime_check</Name>

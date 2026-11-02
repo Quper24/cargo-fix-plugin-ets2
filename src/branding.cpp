@@ -1,4 +1,5 @@
 #include "branding.h"
+#include "brand_palette.h"
 #include <objidl.h>
 #include <gdiplus.h>
 #include <algorithm>
@@ -10,9 +11,9 @@ ULONG_PTR token = 0;
 Gdiplus::Image* logo = nullptr;
 IStream* logo_stream = nullptr;
 constexpr COLORREF Background = RGB(0, 0, 0);
-constexpr COLORREF Accent = RGB(180, 221, 171);
-constexpr COLORREF Border = RGB(58, 80, 53);
-constexpr COLORREF Foreground = RGB(245, 247, 244);
+constexpr COLORREF Accent = RGB(brand_palette::Red, brand_palette::Green, brand_palette::Blue);
+constexpr COLORREF Border = RGB(65, 65, 65);
+constexpr COLORREF Foreground = RGB(255, 255, 255);
 constexpr int LogoWidth = 160;
 constexpr int Left = 24;
 constexpr int BodyTop = 50;
