@@ -11,6 +11,9 @@
       <FullPath>E:\codex\cargo fix plugin ets2\build\bin\Release\CargoControlETS2.dll</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>E:\codex\cargo fix plugin ets2\build\Release\game_profile_check.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>E:\codex\cargo fix plugin ets2\build\Release\generation_limit_check.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>

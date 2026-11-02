@@ -16,6 +16,7 @@
 #include "freight.h"
 #include "company_list.h"
 #include "overlay_ui.h"
+#include "game_profile.h"
 
 #include "scssdk_telemetry.h"
 #include "scssdk_telemetry_event.h"
@@ -24,13 +25,7 @@
 
 namespace {
 
-// Clean-room profile for the exact ETS2 1.61.1.9 executable analyzed locally.
-constexpr wchar_t kExpectedExeSha256[] =
-    L"B70C2357CC56EB5834EE47FEA3C60B2F2D4591383FF2AC479CFD3CD254301B8C";
-constexpr std::uintptr_t kEconomyGlobalRva = 0x03046780;
-constexpr std::uintptr_t kGeneratorRva = 0x007CFBA0;
-constexpr std::uintptr_t kRefillRva = 0x007CDDF0;
-constexpr std::uintptr_t kAttemptBranchRva = 0x007CFE05;
+const GameProfile* g_profile = nullptr;
 
 
 using GenerateFn = void(__fastcall*)(std::uintptr_t company, std::uintptr_t economy);
@@ -133,7 +128,7 @@ std::uintptr_t TrailerKey(std::uintptr_t economy)
 
 void __fastcall KeepLiveOffers(GameVector* offers)
 {
-    const auto economy = *reinterpret_cast<std::uintptr_t*>(g_module_base + kEconomyGlobalRva);
+    const auto economy = *reinterpret_cast<std::uintptr_t*>(g_module_base + g_profile->economy);
     if (!economy || offers->count > 100000) return;
     const auto key = TrailerKey(economy);
     const auto vector_key = reinterpret_cast<std::uintptr_t>(offers);
@@ -141,7 +136,7 @@ void __fastcall KeepLiveOffers(GameVector* offers)
     if (known != g_offer_trailers.end() && known->second != key) {
         // A changed trailer requires the game's normal invalidation of offers
         // for the old trailer; preservation applies within one trailer context.
-        reinterpret_cast<ClearFn>(g_module_base + 0x116510)(offers);
+        reinterpret_cast<ClearFn>(g_module_base + g_profile->clear_vector)(offers);
     }
     g_offer_trailers[vector_key] = key;
     const auto now = *reinterpret_cast<std::uint32_t*>(economy + 0x19c);
@@ -166,16 +161,16 @@ void __fastcall KeepLiveOffers(GameVector* offers)
     // no allocation in the game and the helper only clears its element references.
     if (!expired.empty()) {
         GameVector removed{offers->vtable, expired.data(), expired.size(), expired.size()};
-        reinterpret_cast<ClearFn>(g_module_base + 0x116510)(&removed);
+        reinterpret_cast<ClearFn>(g_module_base + g_profile->clear_vector)(&removed);
     }
 }
 
 bool PatchGeneratorBudget()
 {
-    auto* branch = reinterpret_cast<unsigned char*>(g_module_base + kAttemptBranchRva);
-    auto* immediate = reinterpret_cast<unsigned char*>(g_module_base + 0x7CFE0C);
-    auto* call = reinterpret_cast<unsigned char*>(g_module_base + 0x7CFBD4);
-    const std::int32_t original_relative = static_cast<std::int32_t>((g_module_base + 0x116510) - (g_module_base + 0x7CFBD9));
+    auto* branch = reinterpret_cast<unsigned char*>(g_module_base + g_profile->attempt_branch);
+    auto* immediate = reinterpret_cast<unsigned char*>(g_module_base + g_profile->attempt_immediate);
+    auto* call = reinterpret_cast<unsigned char*>(g_module_base + g_profile->clear_call);
+    const std::int32_t original_relative = static_cast<std::int32_t>((g_module_base + g_profile->clear_vector) - (g_module_base + (g_profile->clear_call + 5)));
     if (branch[0] != 0x73 || branch[1] != 0x0B ||
         *reinterpret_cast<std::uint32_t*>(immediate) != 4 || call[0] != 0xE8 ||
         std::memcmp(call + 1, &original_relative, 4) != 0) return false;
@@ -216,23 +211,39 @@ void RestoreCode()
     if (!g_patched) return;
     const unsigned char branch[2] = {0x73, 0x0B};
     const std::uint32_t four = 4;
-    WriteCode(reinterpret_cast<void*>(g_module_base + 0x7CFBD4), g_original_call.data(), 5);
-    WriteCode(reinterpret_cast<void*>(g_module_base + kAttemptBranchRva), branch, 2);
-    WriteCode(reinterpret_cast<void*>(g_module_base + 0x7CFE0C), &four, 4);
+    WriteCode(reinterpret_cast<void*>(g_module_base + g_profile->clear_call), g_original_call.data(), 5);
+    WriteCode(reinterpret_cast<void*>(g_module_base + g_profile->attempt_branch), branch, 2);
+    WriteCode(reinterpret_cast<void*>(g_module_base + g_profile->attempt_immediate), &four, 4);
     VirtualFree(g_clear_stub, 0, MEM_RELEASE); g_clear_stub = nullptr; g_patched = false;
 }
 bool InitializeProfile()
 {
     const auto exe = ModulePath(nullptr);
     std::wstring actual_hash;
-    if (exe.empty() || !Sha256File(exe, actual_hash) || actual_hash != kExpectedExeSha256) {
+    if (exe.empty() || !Sha256File(exe, actual_hash)) {
+        Log("Could not hash game executable; profile disabled.");
+        return false;
+    }
+    g_profile = FindGameProfile(actual_hash);
+    if (!g_profile) {
         Log("unsupported game executable; profile disabled.");
+        std::string hash;
+        for (const auto digit : actual_hash) hash.push_back(static_cast<char>(digit));
+        Log(("Executable SHA-256: " + hash).c_str());
         return false;
     }
 
     g_module_base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
-    if (!g_module_base || !PatchGeneratorBudget()) {
-        Log("game code signature mismatch; profile disabled.");
+    if (!g_module_base) return false;
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(g_module_base);
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(g_module_base + dos->e_lfanew);
+    if (!ValidateGameProfile(*g_profile, reinterpret_cast<const unsigned char*>(g_module_base),
+                             nt->OptionalHeader.SizeOfImage)) {
+        Log("game code signature mismatch; profile disabled before patching.");
+        return false;
+    }
+    if (!PatchGeneratorBudget()) {
+        Log("generator patch failed; profile disabled.");
         return false;
     }
     const auto dll = ModulePath(g_plugin_module);
@@ -245,8 +256,8 @@ bool InitializeProfile()
         Log("Plugin disabled because the in-game interface could not be initialized.");
         return false;
     }
-    freight::Initialize(g_module_base, g_plugin_dir, Log);
-    Log("ETS2 1.61.1.9 profile active; Cargo Control ETS2 v0.6.1 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.");
+    freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
+    Log((std::string(g_profile->name) + " profile active; Cargo Control ETS2 v0.7.0 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.").c_str());
     return true;
 }
 
@@ -262,7 +273,7 @@ void RunGlobalPass()
 {
     if (!g_enabled || !g_driving) return;
     const auto real_now = GetTickCount64();
-    const auto economy = *reinterpret_cast<std::uintptr_t*>(g_module_base + kEconomyGlobalRva);
+    const auto economy = *reinterpret_cast<std::uintptr_t*>(g_module_base + g_profile->economy);
     if (!economy) return;
     const auto game_now = *reinterpret_cast<std::uint32_t*>(economy + 0x19c);
     if (g_limit.Refresh(game_now)) Log("Generation slot released after 48 game hours.");
@@ -290,8 +301,8 @@ void RunGlobalPass()
 
     const auto started = GetTickCount64();
     g_auto_expiry = deadline;
-    const auto generator = reinterpret_cast<GenerateFn>(g_module_base + kGeneratorRva);
-    const auto refill = reinterpret_cast<RefillFn>(g_module_base + kRefillRva);
+    const auto generator = reinterpret_cast<GenerateFn>(g_module_base + g_profile->generator);
+    const auto refill = reinterpret_cast<RefillFn>(g_module_base + g_profile->refill);
     const auto* companies = reinterpret_cast<const std::uintptr_t*>(array);
     std::uint64_t added = 0, full = 0, eligible = 0;
     notifications::Show(notifications::Translate(L"Generating", L"Cargo market: generating offers across all companies…", L"Биржа грузов: генерация заказов по всем компаниям…"));
@@ -356,7 +367,7 @@ void RunGlobalPass()
 void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
 {
     const auto* frame = static_cast<const scs_telemetry_frame_start_t*>(info);
-    const auto economy = g_enabled ? *reinterpret_cast<std::uintptr_t*>(g_module_base + kEconomyGlobalRva) : 0;
+    const auto economy = g_enabled ? *reinterpret_cast<std::uintptr_t*>(g_module_base + g_profile->economy) : 0;
     const bool restarted = frame && (frame->flags & SCS_TELEMETRY_FRAME_START_FLAG_timer_restart);
     if (restarted ||
         (g_last_economy && economy != g_last_economy)) ResetSession();

@@ -13,3 +13,4 @@ game.log.txt
 game.crash.txt
 
 /vendor/download-*/
+__pycache__/

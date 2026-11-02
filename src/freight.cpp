@@ -21,6 +21,7 @@ static_assert(sizeof(Vector) == 32);
 using Schedule = void(__fastcall*)(std::uintptr_t, std::uintptr_t, std::uint32_t, std::uintptr_t, std::uint32_t);
 
 std::uintptr_t base = 0;
+const GameProfile* profile = nullptr;
 Logger logger = nullptr;
 RefreshCooldown cooldown;
 bool initialized = false;
@@ -95,7 +96,7 @@ void __fastcall ScheduleBridge(std::uintptr_t scheduler, std::uintptr_t economy,
 
 void Run() {
     if (!initialized) return;
-    const auto economy = At<std::uintptr_t>(base, 0x3046780);
+    const auto economy = At<std::uintptr_t>(base, profile->economy);
     if (!economy) return;
     const auto now = At<std::uint32_t>(economy, 0x19c);
     const auto remaining = cooldown.Remaining(GetTickCount64());
@@ -127,8 +128,8 @@ void Run() {
     Log("Freight / Quick jobs stock refresh started; no slot expansion.");
     const auto* companies = reinterpret_cast<const std::uintptr_t*>(array);
     using RefreshCompany = void(__fastcall*)(std::uintptr_t, std::uintptr_t);
-    const auto clear = reinterpret_cast<RefreshCompany>(base + 0x7d0ce0);
-    const auto fill = reinterpret_cast<RefreshCompany>(base + 0x7cd0f0);
+    const auto clear = reinterpret_cast<RefreshCompany>(base + profile->clear_company);
+    const auto fill = reinterpret_cast<RefreshCompany>(base + profile->fill_company);
     for (std::uint64_t n = 0; n < count; ++n) {
         const auto company = companies[n];
         if (!company) continue;
@@ -189,9 +190,9 @@ void Run() {
 }
 }
 
-bool Initialize(std::uintptr_t module, const std::filesystem::path& directory, Logger log) {
-    base = module; logger = log;
-    if (!schedule_hook.Install(0x81cec9, {0x48,0x89,0x5c,0x24,0x10}, reinterpret_cast<void*>(&ScheduleBridge))) {
+bool Initialize(std::uintptr_t module, const GameProfile& selected, const std::filesystem::path& directory, Logger log) {
+    base = module; profile = &selected; logger = log;
+    if (!schedule_hook.Install(profile->schedule, {0x48,0x89,0x5c,0x24,0x10}, reinterpret_cast<void*>(&ScheduleBridge))) {
         Log("Freight mode disabled: native schedule signature/hook failed validation.");
         return false;
     }

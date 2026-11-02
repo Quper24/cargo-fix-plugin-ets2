@@ -182,6 +182,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <Project>{AFF3FE8A-0DA9-338A-8CED-98F24FA7131D}</Project>
       <Name>ets2_cargo_market_control</Name>
     </ProjectReference>
+    <ProjectReference Include="E:\codex\cargo fix plugin ets2\build\game_profile_check.vcxproj">
+      <Project>{6A1C1B6F-9776-3B19-AFB6-07951F0E4CAA}</Project>
+      <Name>game_profile_check</Name>
+    </ProjectReference>
     <ProjectReference Include="E:\codex\cargo fix plugin ets2\build\generation_limit_check.vcxproj">
       <Project>{7ADB3435-C472-3689-9DD8-BDD8A11981E2}</Project>
       <Name>generation_limit_check</Name>

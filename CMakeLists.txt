@@ -21,6 +21,7 @@ set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/branding.rc" PROPERTY OBJECT_DE
 add_library(ets2_cargo_market_control SHARED
   src/overlay_ui.cpp
   src/plugin.cpp
+  src/game_profile.cpp
   src/notifications.cpp
   src/freight.cpp
   src/branding.cpp
@@ -42,6 +43,22 @@ set_target_properties(ets2_cargo_market_control PROPERTIES
 option(CARGO_CONTROL_BUILD_CHECKS "Build offline generation-limit checks" OFF)
 if(CARGO_CONTROL_BUILD_CHECKS)
   enable_testing()
+  add_executable(game_profile_check tests/game_profile_test.cpp src/game_profile.cpp)
+  target_include_directories(game_profile_check PRIVATE src)
+  target_compile_features(game_profile_check PRIVATE cxx_std_17)
+  target_compile_definitions(game_profile_check PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(game_profile_check PRIVATE bcrypt)
+  add_test(NAME game_profile_selection COMMAND game_profile_check)
+  foreach(snapshot temporary_1_61-1.61.1.1 oculus-1.61.1.1009 public_beta-1.62.0.10)
+    set(exe_snapshot "${CMAKE_CURRENT_SOURCE_DIR}/diagnostics/executables/${snapshot}/eurotrucks2.exe")
+    if(EXISTS "${exe_snapshot}")
+      add_test(NAME "profile_${snapshot}" COMMAND game_profile_check "${exe_snapshot}")
+    endif()
+  endforeach()
+  set(reference_image "${CMAKE_CURRENT_SOURCE_DIR}/diagnostics/executables/reference-1.61.1.9-mapped.bin")
+  if(EXISTS "${reference_image}")
+    add_test(NAME profile_reference_1.61.1.9 COMMAND game_profile_check "${reference_image}" --mapped-reference)
+  endif()
   add_executable(generation_limit_check tests/generation_limit_test.cpp)
   target_include_directories(generation_limit_check PRIVATE src)
   target_compile_features(generation_limit_check PRIVATE cxx_std_17)

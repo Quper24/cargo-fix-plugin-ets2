@@ -1,8 +1,13 @@
-generation_limit 21 0.000232762
-company_list 11 0.000446782
-hotkey_binding 8 0.00048755
+generation_limit 22 0.000341609
+company_list 12 0.00065395
+hotkey_binding 9 0.0008001
 control_menu 3 0.0068774
-notification_lifetime 5 0.00078762
-overlay_dx11 3 0.0944327
-menu_pointer 2 0.00182865
+notification_lifetime 6 0.00115623
+overlay_dx11 4 0.0885956
+menu_pointer 3 0.00202423
+game_profile_selection 1 0.0099297
+profile_temporary_1_61-1.61.1.1 1 0.290041
+profile_oculus-1.61.1.1009 1 0.274592
+profile_public_beta-1.62.0.10 1 0.2861
+profile_reference_1.61.1.9 1 0.328643
 ---
