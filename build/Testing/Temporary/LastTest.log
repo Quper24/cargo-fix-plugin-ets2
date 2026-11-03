@@ -1,89 +1,104 @@
-Start testing: Nov 02 22:40 RTZ 2 (çèìà)
+Start testing: Nov 03 19:04 RTZ 2 (çèìà)
 ----------------------------------------------------------
-1/11 Testing: game_profile_selection
-1/11 Test: game_profile_selection
-Command: "E:/codex/cargo fix plugin ets2/build/Release/game_profile_check.exe"
+1/12 Testing: profile_readiness
+1/12 Test: profile_readiness
+Command: "E:/codex/cargo fix plugin ets2/build/Release/profile_readiness_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"game_profile_selection" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_readiness" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 <end of output>
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"game_profile_selection" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_readiness" end time: Nov 03 19:04 RTZ 2 (çèìà)
+"profile_readiness" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/12 Testing: game_profile_selection
+2/12 Test: game_profile_selection
+Command: "E:/codex/cargo fix plugin ets2/build/Release/game_profile_check.exe"
+Directory: E:/codex/cargo fix plugin ets2/build
+"game_profile_selection" start time: Nov 03 19:04 RTZ 2 (çèìà)
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"game_profile_selection" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "game_profile_selection" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-2/11 Testing: profile_temporary_1_61-1.61.1.1
-2/11 Test: profile_temporary_1_61-1.61.1.1
+3/12 Testing: profile_temporary_1_61-1.61.1.1
+3/12 Test: profile_temporary_1_61-1.61.1.1
 Command: "E:/codex/cargo fix plugin ets2/build/Release/game_profile_check.exe" "E:/codex/cargo fix plugin ets2/diagnostics/executables/temporary_1_61-1.61.1.1/eurotrucks2.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"profile_temporary_1_61-1.61.1.1" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_temporary_1_61-1.61.1.1" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 Validated ETS2 1.61.1.1 temporary_1_61: executable identity, ten guards, wrong profiles, truncation and modified code rejection.
 <end of output>
-Test time =   0.29 sec
+Test time =   0.25 sec
 ----------------------------------------------------------
 Test Passed.
-"profile_temporary_1_61-1.61.1.1" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_temporary_1_61-1.61.1.1" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "profile_temporary_1_61-1.61.1.1" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-3/11 Testing: profile_oculus-1.61.1.1009
-3/11 Test: profile_oculus-1.61.1.1009
+4/12 Testing: profile_oculus-1.61.1.1009
+4/12 Test: profile_oculus-1.61.1.1009
 Command: "E:/codex/cargo fix plugin ets2/build/Release/game_profile_check.exe" "E:/codex/cargo fix plugin ets2/diagnostics/executables/oculus-1.61.1.1009/eurotrucks2.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"profile_oculus-1.61.1.1009" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_oculus-1.61.1.1009" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 Validated ETS2 1.61.1.1009 oculus: executable identity, ten guards, wrong profiles, truncation and modified code rejection.
 <end of output>
-Test time =   0.27 sec
+Test time =   0.25 sec
 ----------------------------------------------------------
 Test Passed.
-"profile_oculus-1.61.1.1009" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_oculus-1.61.1.1009" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "profile_oculus-1.61.1.1009" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-4/11 Testing: profile_public_beta-1.62.0.10
-4/11 Test: profile_public_beta-1.62.0.10
+5/12 Testing: profile_public_beta-1.62.0.10
+5/12 Test: profile_public_beta-1.62.0.10
 Command: "E:/codex/cargo fix plugin ets2/build/Release/game_profile_check.exe" "E:/codex/cargo fix plugin ets2/diagnostics/executables/public_beta-1.62.0.10/eurotrucks2.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"profile_public_beta-1.62.0.10" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_public_beta-1.62.0.10" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 Validated ETS2 1.62.0.10 public_beta: executable identity, ten guards, wrong profiles, truncation and modified code rejection.
 <end of output>
-Test time =   0.29 sec
+Test time =   0.25 sec
 ----------------------------------------------------------
 Test Passed.
-"profile_public_beta-1.62.0.10" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_public_beta-1.62.0.10" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "profile_public_beta-1.62.0.10" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-5/11 Testing: profile_reference_1.61.1.9
-5/11 Test: profile_reference_1.61.1.9
+6/12 Testing: profile_reference_1.61.1.9
+6/12 Test: profile_reference_1.61.1.9
 Command: "E:/codex/cargo fix plugin ets2/build/Release/game_profile_check.exe" "E:/codex/cargo fix plugin ets2/diagnostics/executables/reference-1.61.1.9-mapped.bin" "--mapped-reference"
 Directory: E:/codex/cargo fix plugin ets2/build
-"profile_reference_1.61.1.9" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_reference_1.61.1.9" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 Validated ETS2 1.61.1.9 standard: executable identity, ten guards, wrong profiles, truncation and modified code rejection.
 <end of output>
-Test time =   0.33 sec
+Test time =   0.29 sec
 ----------------------------------------------------------
 Test Passed.
-"profile_reference_1.61.1.9" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"profile_reference_1.61.1.9" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "profile_reference_1.61.1.9" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-6/11 Testing: generation_limit
-6/11 Test: generation_limit
+7/12 Testing: generation_limit
+7/12 Test: generation_limit
 Command: "E:/codex/cargo fix plugin ets2/build/Release/generation_limit_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"generation_limit" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"generation_limit" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 Generation limit checks passed
@@ -91,86 +106,86 @@ Generation limit checks passed
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"generation_limit" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"generation_limit" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "generation_limit" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-7/11 Testing: hotkey_binding
-7/11 Test: hotkey_binding
+8/12 Testing: hotkey_binding
+8/12 Test: hotkey_binding
 Command: "E:/codex/cargo fix plugin ets2/build/Release/hotkey_binding_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"hotkey_binding" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"hotkey_binding" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 <end of output>
-Test time =   0.01 sec
+Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"hotkey_binding" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"hotkey_binding" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "hotkey_binding" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-8/11 Testing: menu_pointer
-8/11 Test: menu_pointer
+9/12 Testing: menu_pointer
+9/12 Test: menu_pointer
 Command: "E:/codex/cargo fix plugin ets2/build/Release/menu_pointer_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"menu_pointer" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"menu_pointer" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 <end of output>
-Test time =   0.01 sec
+Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"menu_pointer" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"menu_pointer" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "menu_pointer" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-9/11 Testing: notification_lifetime
-9/11 Test: notification_lifetime
+10/12 Testing: notification_lifetime
+10/12 Test: notification_lifetime
 Command: "E:/codex/cargo fix plugin ets2/build/Release/notification_lifetime_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"notification_lifetime" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"notification_lifetime" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 <end of output>
-Test time =   0.01 sec
+Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"notification_lifetime" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"notification_lifetime" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "notification_lifetime" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-10/11 Testing: overlay_dx11
-10/11 Test: overlay_dx11
+11/12 Testing: overlay_dx11
+11/12 Test: overlay_dx11
 Command: "E:/codex/cargo fix plugin ets2/build/Release/overlay_dx11_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"overlay_dx11" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"overlay_dx11" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 DirectX 11 in-game interface attached; no desktop overlay windows.
 DirectX 11 Present hook enabled; awaiting the game swap chain.
 DX11 pixels, branded logo, viewport preservation, resize, window procedure restore, Present/DirectInput hooks and exact UNORM/sRGB palette passed.
 <end of output>
-Test time =   0.35 sec
+Test time =   0.30 sec
 ----------------------------------------------------------
 Test Passed.
-"overlay_dx11" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"overlay_dx11" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "overlay_dx11" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-11/11 Testing: company_list
-11/11 Test: company_list
+12/12 Testing: company_list
+12/12 Test: company_list
 Command: "E:/codex/cargo fix plugin ets2/build/Release/company_list_check.exe"
 Directory: E:/codex/cargo fix plugin ets2/build
-"company_list" start time: Nov 02 22:40 RTZ 2 (çèìà)
+"company_list" start time: Nov 03 19:04 RTZ 2 (çèìà)
 Output:
 ----------------------------------------------------------
 <end of output>
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"company_list" end time: Nov 02 22:40 RTZ 2 (çèìà)
+"company_list" end time: Nov 03 19:04 RTZ 2 (çèìà)
 "company_list" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Nov 02 22:40 RTZ 2 (çèìà)
+End testing: Nov 03 19:04 RTZ 2 (çèìà)

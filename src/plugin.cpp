@@ -16,6 +16,7 @@
 #include "freight.h"
 #include "company_list.h"
 #include "overlay_ui.h"
+#include "profile_readiness.h"
 #include "game_profile.h"
 
 #include "scssdk_telemetry.h"
@@ -40,6 +41,7 @@ bool g_enabled = false;
 bool g_hotkey_was_down = false;
 
 GenerationLimit g_limit;
+ProfileReadiness g_readiness;
 std::uint32_t g_auto_expiry = 0;
 bool g_manual_call = false;
 std::uint32_t g_manual_seed = 0;
@@ -119,11 +121,11 @@ bool WriteCode(void* address, const void* bytes, std::size_t length)
 std::uintptr_t TrailerKey(std::uintptr_t economy)
 {
     const auto player = *reinterpret_cast<std::uintptr_t*>(economy + 0x18);
-    if (!player) return 0;
+    if (!ReadableMemory(player, 0x80)) return 0;
     const auto reference = *reinterpret_cast<std::uintptr_t*>(player + 0x78);
-    if (!reference) return 0;
+    if (!ReadableMemory(reference, sizeof(std::uintptr_t))) return 0;
     const auto owner = *reinterpret_cast<std::uintptr_t*>(reference);
-    return owner ? *reinterpret_cast<std::uintptr_t*>(owner + 0x48) : 0;
+    return ReadableMemory(owner, 0x50) ? *reinterpret_cast<std::uintptr_t*>(owner + 0x48) : 0;
 }
 
 void __fastcall KeepLiveOffers(GameVector* offers)
@@ -257,24 +259,27 @@ bool InitializeProfile()
         return false;
     }
     freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
-    Log((std::string(g_profile->name) + " profile active; Cargo Control ETS2 v0.7.0 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.").c_str());
+    Log((std::string(g_profile->name) + " profile active; Cargo Control ETS2 v0.7.2 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.").c_str());
     return true;
 }
 
 void ResetSession()
 {
-    overlay_ui::CancelPending();
     g_limit.Reset();
     freight::Reset();
     Log("session limit reset (telemetry timer restart / economy change).");
 }
 
-void RunGlobalPass()
+void RunGlobalPass(std::uintptr_t economy)
 {
-    if (!g_enabled || !g_driving) return;
+    if (!g_enabled) return;
+    if (!TrailerKey(economy)) {
+        notifications::Show(notifications::Translate(L"TrailerRequired",
+            L"Select your owned trailer to add cargo offers. You can refresh Freight / Quick jobs without an owned truck.",
+            L"Для добавления грузов выберите собственный прицеп. Обновление рынка и заказов агентств доступно без своего грузовика."));
+        return;
+    }
     const auto real_now = GetTickCount64();
-    const auto economy = *reinterpret_cast<std::uintptr_t*>(g_module_base + g_profile->economy);
-    if (!economy) return;
     const auto game_now = *reinterpret_cast<std::uint32_t*>(economy + 0x19c);
     if (g_limit.Refresh(game_now)) Log("Generation slot released after 48 game hours.");
     if (g_limit.Blocked()) {
@@ -368,10 +373,12 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
 {
     const auto* frame = static_cast<const scs_telemetry_frame_start_t*>(info);
     const auto economy = g_enabled ? *reinterpret_cast<std::uintptr_t*>(g_module_base + g_profile->economy) : 0;
+    EconomySnapshot snapshot{};
+    const bool valid = ReadEconomySnapshot(economy, snapshot);
     const bool restarted = frame && (frame->flags & SCS_TELEMETRY_FRAME_START_FLAG_timer_restart);
     if (restarted ||
         (g_last_economy && economy != g_last_economy)) ResetSession();
-    if (economy && (restarted || economy != g_last_economy || g_offer_trailers.empty())) {
+    if (valid && (restarted || economy != g_last_economy || g_offer_trailers.empty())) {
         g_offer_trailers.clear();
         const auto key = TrailerKey(economy);
         const auto array = *reinterpret_cast<std::uintptr_t*>(economy + 0x28);
@@ -384,9 +391,16 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     }
     g_last_economy = economy;
     notifications::Tick();
-    const int action = overlay_ui::Tick(g_driving);
-    if (action == 1) RunGlobalPass();
-    else if (action == 2 && g_enabled) freight::Request(g_driving);
+    const bool ready = g_readiness.Observe(snapshot, valid, restarted);
+    // Consume every request even in menus: never defer it until a future drive/save.
+    const int action = overlay_ui::Tick();
+    if (action && !ready) {
+        notifications::Show(notifications::Translate(L"ProfileNotReady",
+            L"Profile data is not ready. Wait for loading to finish, then try again from the garage.",
+            L"Данные профиля ещё не готовы. Дождитесь окончания загрузки и повторите действие в гараже."));
+        Log("Manual request rejected: profile/economy is not ready.");
+    } else if (action == 1) RunGlobalPass(economy);
+    else if (action == 2 && g_enabled) freight::Request(economy);
 
 }
 void OnPaused(const scs_event_t, const void*, const scs_context_t) { g_driving = false; }
@@ -416,7 +430,7 @@ SCSAPI_VOID scs_telemetry_shutdown(void)
     freight::Shutdown();
     RestoreCode();
     notifications::Shutdown();
-    g_limit.Reset(); g_auto_expiry = 0;
+    g_limit.Reset(); g_auto_expiry = 0; g_readiness = {};
     g_last_economy = 0; g_hotkey_was_down = false;
     g_offer_trailers.clear();
     g_enabled = false;

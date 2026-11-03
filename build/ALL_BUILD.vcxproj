@@ -210,6 +210,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
       <Project>{B70AE7DA-6AC1-35F3-9599-5906F7DC4F2E}</Project>
       <Name>overlay_dx11_check</Name>
     </ProjectReference>
+    <ProjectReference Include="E:\codex\cargo fix plugin ets2\build\profile_readiness_check.vcxproj">
+      <Project>{9EFDD718-93C3-3FB6-8273-7FC39C8A11BD}</Project>
+      <Name>profile_readiness_check</Name>
+    </ProjectReference>
     <ProjectReference Include="E:\codex\cargo fix plugin ets2\build\qs_imgui.vcxproj">
       <Project>{48014E78-A749-31D3-86A5-B8880C7D7D8F}</Project>
       <Name>qs_imgui</Name>

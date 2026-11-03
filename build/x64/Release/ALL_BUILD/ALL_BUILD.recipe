@@ -32,6 +32,9 @@
       <FullPath>E:\codex\cargo fix plugin ets2\build\Release\overlay_dx11_check.exe</FullPath>
     </ProjectOutput>
     <ProjectOutput>
+      <FullPath>E:\codex\cargo fix plugin ets2\build\Release\profile_readiness_check.exe</FullPath>
+    </ProjectOutput>
+    <ProjectOutput>
       <FullPath>E:\codex\cargo fix plugin ets2\build\x64\Release\ALL_BUILD</FullPath>
     </ProjectOutput>
   </ProjectOutputs>

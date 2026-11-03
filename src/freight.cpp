@@ -94,10 +94,8 @@ void __fastcall ScheduleBridge(std::uintptr_t scheduler, std::uintptr_t economy,
     schedule_hook.Original<Schedule>()(scheduler, economy, time, company, slot);
 }
 
-void Run() {
-    if (!initialized) return;
-    const auto economy = At<std::uintptr_t>(base, profile->economy);
-    if (!economy) return;
+void Run(std::uintptr_t economy) {
+    if (!initialized || !economy) return;
     const auto now = At<std::uint32_t>(economy, 0x19c);
     const auto remaining = cooldown.Remaining(GetTickCount64());
     if (remaining) {
@@ -202,13 +200,12 @@ bool Initialize(std::uintptr_t module, const GameProfile& selected, const std::f
 }
 void Reset() { cooldown.Reset(); }
 void PrepareForDriving() {}
-void Request(bool driving) {
-    if (!driving) return;
+void Request(std::uintptr_t economy) {
     if (!initialized) {
         notifications::Show(notifications::Translate(L"FreightDisabled",
             L"Freight mode is unavailable. See game.log.txt.",
             L"Обновление заказов недоступно. Подробности в game.log.txt."));
-    } else Run();
+    } else Run(economy);
 }
 void Shutdown() {
     initialized = false;

@@ -4,12 +4,9 @@
 
 // Global map company lists can exceed 10,000 entries on map combinations.
 // Keep a corruption guard, and verify the backing memory before traversal.
-inline bool ValidCompanyList(std::uintptr_t data, std::uint64_t count)
+inline bool ReadableMemory(std::uintptr_t data, std::uintptr_t bytes)
 {
-    constexpr std::uint64_t max_companies = 1000000;
-    if (!data || !count || count > max_companies) return false;
-    const auto bytes = static_cast<std::uintptr_t>(count * sizeof(std::uintptr_t));
-    if (data > UINTPTR_MAX - bytes) return false;
+    if (!data || !bytes || data > UINTPTR_MAX - bytes) return false;
     const auto end = data + bytes;
     while (data < end) {
         MEMORY_BASIC_INFORMATION region{};
@@ -26,4 +23,8 @@ inline bool ValidCompanyList(std::uintptr_t data, std::uint64_t count)
         data = next;
     }
     return true;
+}
+inline bool ValidCompanyList(std::uintptr_t data, std::uint64_t count)
+{
+    return count && count <= 1000000 && ReadableMemory(data, static_cast<std::uintptr_t>(count * sizeof(std::uintptr_t)));
 }

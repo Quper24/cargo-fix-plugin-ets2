@@ -24,7 +24,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM,
 namespace overlay_ui {
 namespace {
 std::recursive_mutex mutex;
-std::atomic<bool> stopping{true}, driving{false};
+std::atomic<bool> stopping{true};
 std::atomic<int> requested{0};
 std::atomic<unsigned> callbacks{0};
 Logger logger = nullptr;
@@ -171,9 +171,9 @@ void Poll(bool focused) {
                 if(value==hotkeys::Menu) { error=Tr("This shortcut opens the menu.","Это сочетание открывает меню.");break; }
                 (capture==1?draft_cargo:draft_freight)=value;capture=0;error.clear();break;
             }
-        } else if(!menu && driving) {
+        } else if(!menu) {
             if(release_actions) { if(!a&&!b)release_actions=false; }
-            else if(a&&!cargo_down)requested=1;else if(b&&!freight_down)requested=2;
+            else if(a&&!cargo_down)Request(1);else if(b&&!freight_down)Request(2);
         }
     } else if(menu) CloseMenu();
     menu_was_down=m;cargo_down=a;freight_down=b;
@@ -193,7 +193,7 @@ void DrawMenu() {
     auto button=[&](const char* label,float x,float y,float w,float h,bool primary=false){
         ImGui::SetCursorScreenPos(pos(x,y));ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{8*scale,8*scale});
         ImGui::SetWindowFontScale(scale*.5f);
-        if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(accent.x+(1-accent.x)*.15f,accent.y+(1-accent.y)*.15f,accent.z+(1-accent.z)*.15f,1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(accent.x*.85f,accent.y*.85f,accent.z*.85f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1)); }
+        if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(std::min(1.f,accent.x*1.08f),std::min(1.f,accent.y*1.08f),std::min(1.f,accent.z*1.08f),1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(accent.x*.85f,accent.y*.85f,accent.z*.85f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1)); }
         bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar();return hit;
     };
     text(32,25,14,green,"QUPER SIMULATOR");text(30,54,34,white,"Cargo Control ETS2");
@@ -205,8 +205,8 @@ void DrawMenu() {
     text(48,220,16,muted,Tr("Add up to 5 offers per company.\nKeep your existing orders.","Добавить до 5 грузов в каждой компании.\nСуществующие заказы сохраняются."));
     text(482,176,23,white,Tr("Freight & Quick jobs","Рынок и агентства"));
     text(482,220,16,muted,Tr("Refresh offers across all companies.\nExisting orders will be replaced.","Обновить предложения во всех компаниях.\nСуществующие заказы будут заменены."));
-    if(button(Tr("Add cargo","Добавить грузы"),48,298,370,42,true)) { requested=1;CloseMenu(); }
-    if(button(Tr("Refresh orders","Обновить заказы"),482,298,370,42,true)) { requested=2;CloseMenu(); }
+    if(button(Tr("Add cargo","Добавить грузы"),48,298,370,42,true)) { Request(1);CloseMenu(); }
+    if(button(Tr("Refresh orders","Обновить заказы"),482,298,370,42,true)) { Request(2);CloseMenu(); }
     text(32,385,21,white,Tr("Keyboard shortcuts","Горячие клавиши"));
     text(48,428,15,muted,Tr("Add cargo","Добавление грузов"));text(482,428,15,muted,Tr("Refresh orders","Обновление заказов"));
     const auto a=(capture==1?std::string(Tr("Press a shortcut…","Нажмите сочетание…")):BindingName(draft_cargo))+"##cargo";
@@ -216,7 +216,7 @@ void DrawMenu() {
     if(button(Tr("Clear##cargo","Сброс##cargo"),350,458,68,38)){draft_cargo=0;capture=0;}
     if(button(Tr("Clear##freight","Сброс##freight"),784,458,68,38)){draft_freight=0;capture=0;}
     text(32,518,15,muted,Tr("Select a field and press a shortcut. Clear disables the binding.","Выберите поле и нажмите сочетание. «Сброс» отключает назначение."));
-    text(32,545,15,muted,Tr("Stop your truck first. Menu: Ctrl + Alt + F9.","Перед генерацией остановите грузовик. Меню: Ctrl + Alt + F9."));
+    text(32,545,15,muted,Tr("Available in the garage and while driving. Menu: Ctrl + Alt + F9.","Доступно в гараже и в пути. Меню: Ctrl + Alt + F9."));
     text(32,599,14,error.empty()?muted:white,error.empty()?Tr("Save to apply your shortcuts.","Изменения применяются после сохранения."):error.c_str());
     if(button(Tr("Save","Сохранить"),576,588,142,44,true)) {
         if(!hotkeys::PairAllowed(draft_cargo,draft_freight))error=Tr("Choose different shortcuts.","Назначьте разные сочетания.");
@@ -386,7 +386,8 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
     return ok;
 }
 void Notify(const std::wstring& text) { std::lock_guard<std::recursive_mutex> guard(mutex);notice=Utf8(text);lifetime.Start(); }
-int Tick(bool active) { driving=active;return active?requested.exchange(0):0; }
+void Request(int action) { if(action==1 || action==2) requested=action; }
+int Tick() { return requested.exchange(0); }
 void CancelPending() { requested=0; }
 Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr}; }
 void Shutdown() {
@@ -397,7 +398,7 @@ void Shutdown() {
     while(callbacks.load())Sleep(1);
     std::lock_guard<std::recursive_mutex> guard(mutex);ReleaseRenderer();
     RemoveMouseHooks();if(hook_owned)MH_RemoveHook(present_site);if(minhook_owned)MH_Uninitialize();hook_owned=minhook_owned=false;
-    requested=0;driving=false;notice.clear();keys.fill(false);menu_was_down=cargo_down=freight_down=false;
+    requested=0;notice.clear();keys.fill(false);menu_was_down=cargo_down=freight_down=false;
     previous_present=nullptr;present_site=nullptr;logger=nullptr;
 }
 }

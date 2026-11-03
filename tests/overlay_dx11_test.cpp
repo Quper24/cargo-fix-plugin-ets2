@@ -47,6 +47,8 @@ int wmain(int argc,wchar_t** argv) {
     ComPtr<IDXGISwapChain> chain;ComPtr<ID3D11Device> dev;ComPtr<ID3D11DeviceContext> gpu;
     Check(SUCCEEDED(D3D11CreateDeviceAndSwapChain(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&desc,&chain,&dev,nullptr,&gpu)));
     Check(overlay_ui::Initialize(std::filesystem::temp_directory_path(),Log,false));
+    overlay_ui::Request(2);Check(overlay_ui::Tick()==2);Check(overlay_ui::Tick()==0); // No driving/started event is necessary.
+    overlay_ui::Request(1);overlay_ui::CancelPending();Check(overlay_ui::Tick()==0);
     D3D11_VIEWPORT viewport{11,12,333,222,.2f,.8f};gpu->RSSetViewports(1,&viewport);
     for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,true);
     const auto status=overlay_ui::Inspect();Check(status.ready && status.logo && status.frames>0);
