@@ -36,6 +36,9 @@ namespace {
 const GameProfile* g_profile = nullptr;
 GameProfile g_resolved_profile{};
 GameKind g_game = GameKind::Unknown;
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+CreationCode g_creation_code{};
+#endif
 
 
 using GenerateFn = void(__fastcall*)(std::uintptr_t company, std::uintptr_t economy);
@@ -120,6 +123,20 @@ void MatchTrailer(GameVector& offers, std::uintptr_t economy)
     }
     g_offer_trailers[vector_key] = key;
 }
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+void PrepareSpecificOwned(std::uintptr_t company,std::uintptr_t economy) {
+    auto& offers=*reinterpret_cast<GameVector*>(company+0xa0);
+    if(ValidOfferVector(offers))MatchTrailer(offers,economy);
+}
+void GenerateSpecificOwned(std::uintptr_t company,std::uintptr_t economy) {
+    struct RestoreValue {std::uint32_t& field;std::uint32_t previous;~RestoreValue(){field=previous;}};
+    RestoreValue expiry{g_auto_expiry,g_auto_expiry},seed{g_manual_seed,g_manual_seed};
+    const auto now=*reinterpret_cast<const std::uint32_t*>(economy+0x19c);
+    g_auto_expiry=now+48u*60u;g_manual_seed=static_cast<std::uint32_t>(GetTickCount64());
+    ManualGenerationScope manual(g_manual_call,g_generator_attempts,1);
+    g_original_generator(company,economy);
+}
+#endif
 
 void __fastcall KeepLiveOffers(GameVector* offers)
 {
@@ -270,6 +287,11 @@ bool InitializeProfile()
         Log("game code signature mismatch; profile disabled before patching.");
         return false;
     }
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    g_creation_code={};
+    if(!ResolveCreationCode(reinterpret_cast<const unsigned char*>(g_module_base),nt->OptionalHeader.SizeOfImage,*g_profile,g_creation_code,reason))
+        Log(("Custom job creation disabled before patching: "+reason).c_str());
+#endif
     if (!PatchGeneratorBudget()) {
         Log("generator patch failed; profile disabled.");
         return false;
@@ -294,6 +316,7 @@ bool InitializeProfile()
     freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     custom_jobs::Initialize(g_module_base, nt->OptionalHeader.SizeOfImage, Log);
+    custom_jobs::EnableCreation(*g_profile,g_creation_code,{PrepareSpecificOwned,GenerateSpecificOwned});
 #endif
     Log((std::string(g_profile->name) + " profile active. Cargo Control v" CARGO_CONTROL_VERSION_TEXT
          ". Control menu Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());
@@ -453,6 +476,9 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     // Consume every request even in menus: never defer it until a future drive/save.
     const int action = overlay_ui::Tick();
     if (action && !ready) {
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+        custom_jobs::CancelCreation();
+#endif
         notifications::Show(notifications::Translate(L"ProfileNotReady",
             L"Profile data is not ready. Wait for loading to finish, then try again from the garage.",
             L"Данные профиля ещё не готовы. Дождитесь окончания загрузки и повторите действие в гараже."));
@@ -461,6 +487,14 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     else if (action == 2 && g_enabled) freight::Request(economy);
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     else if (action == 3 && g_enabled) custom_jobs::Scan(economy);
+    else if (action == 4 && g_enabled) {
+        const auto result=custom_jobs::ExecuteCreation(economy);
+        const auto text=custom_jobs::CreationMessage(result,notifications::Russian());
+        const int length=MultiByteToWideChar(CP_UTF8,0,text.data(),static_cast<int>(text.size()),nullptr,0);
+        std::wstring message(length,L'\0');
+        if(length)MultiByteToWideChar(CP_UTF8,0,text.data(),static_cast<int>(text.size()),message.data(),length);
+        notifications::Show(message);
+    }
 #endif
 
 }

@@ -21,3 +21,11 @@ struct CatalogNameCode {
 };
 bool ResolveCatalogNames(const unsigned char* image, std::size_t size,
                          CatalogNameCode& out, std::string& reason);
+struct CreationCode {
+    std::uint32_t owned_candidates=0, base_candidates=0, destinations=0, base_slot=0;
+    std::uint32_t base_factory=0, schedule=0, free_event_node=0, physical_update=0;
+    std::uint32_t allocator_index=0, allocator_array=0, destination_prefix=0;
+};
+// Must run on the original code image, before existing generator/scheduler hooks.
+bool ResolveCreationCode(const unsigned char* image, std::size_t size, const GameProfile& core,
+                         CreationCode& out, std::string& reason);

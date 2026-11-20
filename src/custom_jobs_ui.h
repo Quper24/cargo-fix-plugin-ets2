@@ -6,17 +6,20 @@
 
 namespace custom_jobs {
 // UI owns strings only; native pointers never cross the render/game boundary.
-inline void DrawCatalog(float scale, bool russian, const std::function<void()>& scan) {
+inline void DrawCatalog(float scale, bool russian, const std::function<void()>& scan,const std::function<void()>& create) {
     const auto state = Snapshot();
     auto tr = [&](const char* en, const char* ru) { return russian ? ru : en; };
     static std::uint64_t session = UINT64_MAX;
     static std::string origin_city, origin_id, cargo_id, destination_city, destination_id;
     static std::array<char, 128> search{};
     static int market = 0;
+    static bool allow_replace=false;
+    static std::string request_error;
     if (session != state->session) {
         session = state->session;
         origin_city.clear(); origin_id.clear(); cargo_id.clear(); destination_city.clear(); destination_id.clear();
         search.fill(0);
+        allow_replace=false;request_error.clear();
     }
     ImGui::SetWindowFontScale(scale * .5f);
     if (ImGui::Button(tr("Read loaded session", "Считать загруженную сессию"))) scan();
@@ -131,8 +134,18 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     base_select(tr("Destination company", "База назначения"), destination_city, destination_id, true);
     const auto* destination = find_company(destination_id);
     if (destination && !Accepts(*destination, cargo_id)) destination_id.clear();
-    ImGui::TextWrapped("%s", tr("Trailer compatibility and routes are not checked yet. Job creation is not connected.",
-                              "Совместимость прицепа и маршрут пока не проверяются. Создание заказа ещё не подключено."));
-    ImGui::BeginDisabled(); ImGui::Button(tr("Create job", "Создать заказ")); ImGui::EndDisabled();
+    if(market==0)ImGui::Checkbox(tr("Allow replacing one source-company offer","Разрешить замену одного предложения на базе отправления"),&allow_replace);
+    ImGui::TextWrapped("%s",tr("The game checks the cargo, route and trailer. Accept the created offer from its market.",
+                              "Игра проверит груз, направление и прицеп. Готовое предложение можно принять на соответствующем рынке."));
+    if(!state->creation_supported)ImGui::TextDisabled("%s",tr("Native job creation is unavailable for this game code.","Создание заказа недоступно для этого кода игры."));
+    JobRequest request{state->session,market==1?Market::OwnedTrailer:Market::Freight,origin_id,cargo_id,destination_id,allow_replace};
+    ImGui::BeginDisabled(!state->creation_supported || !ValidSelection(catalog,request));
+    if(ImGui::Button(tr("Create job", "Создать заказ"))){
+        if(QueueCreation(request)){request_error.clear();create();}
+        else request_error=tr("Request not queued. Read the session and try again.","Запрос не поставлен в очередь. Считайте сессию и повторите действие.");
+    }
+    ImGui::EndDisabled();
+    if(!request_error.empty())ImGui::TextWrapped("%s",request_error.c_str());
+    if(state->has_creation_result)ImGui::TextWrapped("%s",CreationMessage(state->creation_result,russian).c_str());
 }
 }

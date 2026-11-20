@@ -1,0 +1,75 @@
+#include "custom_job_request.h"
+#include "custom_job_events.h"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#define Check(value) do {if(!(value)){std::fprintf(stderr,"Creation check failed: %d\n",__LINE__);std::exit(1);}}while(0)
+using namespace custom_jobs;
+struct List {
+    std::vector<unsigned char> bytes=std::vector<unsigned char>(4096);
+    unsigned writes=0;
+    bool Range(std::uintptr_t at,std::size_t count){return at>=0x100 && at<bytes.size() && count<=bytes.size()-at;}
+    Reader read=[this](std::uintptr_t at,void* out,std::size_t size){if(!Range(at,size))return false;std::memcpy(out,bytes.data()+at,size);return true;};
+    creation::WritableCheck writable=[this](std::uintptr_t at,std::size_t size){return Range(at,size);};
+    creation::Writer write=[this](std::uintptr_t at,const void* data,std::size_t size){Check(Range(at,size));++writes;std::memcpy(bytes.data()+at,data,size);};
+    template<class T> void Put(std::uintptr_t at,T value){Check(Range(at,sizeof(value)));std::memcpy(bytes.data()+at,&value,sizeof(value));}
+    template<class T> T Get(std::uintptr_t at){T value{};Check(Read(read,at,value));return value;}
+    List(){
+        Put<std::uint64_t>(0x140,4);
+        const std::uintptr_t nodes[]={0x148,0x200,0x240,0x280,0x2c0};
+        for(unsigned n=0;n<5;++n){Put(nodes[n],nodes[(n+1)%5]);Put(nodes[n]+8,nodes[(n+4)%5]);}
+        for(unsigned n=1;n<5;++n){const std::uintptr_t event=0x400+n*0x40;Put(nodes[n]+16,event);Put<std::uintptr_t>(event+0x18,n==3?0xbbb:0xaaa);Put<std::uint32_t>(event+0x20,n==2?1:0);Put<std::uint32_t>(event+0x10,100+n);}
+    }
+};
+int main(){
+    Catalog catalog;
+    catalog.companies={{"company.volatile.a.x","x","Coca-Cola",{"cargo.salt"},{}},
+                       {"company.volatile.b.y","y","FedEx",{},{"cargo.salt"}},
+                       {"company.volatile.c.y","y","FedEx",{},{"cargo.other"}}};
+    JobRequest request{7,Market::Freight,"company.volatile.a.x","cargo.salt","company.volatile.b.y",false};
+    Check(ValidSelection(catalog,request));
+    auto wrong=request;wrong.destination="FedEx";Check(!ValidSelection(catalog,wrong));
+    wrong=request;wrong.destination="company.volatile.c.y";Check(!ValidSelection(catalog,wrong));
+    wrong=request;wrong.destination=wrong.origin;Check(!ValidSelection(catalog,wrong));
+    wrong=request;wrong.cargo="Salt";Check(!ValidSelection(catalog,wrong));
+    request.market=Market::OwnedTrailer;Check(ValidSelection(catalog,request));
+    RequestQueue queue;Check(queue.Push(request));Check(!queue.Push(wrong));
+    Check(queue.Take()->destination==request.destination);Check(!queue.Take());
+    Check(queue.Push(request));queue.Clear();Check(!queue.Take());
+    std::vector<OfferState> offers={{1,"b.y",200},{2,"c.z",200},{0,"",0}};
+    Check(ChooseFreightSlot(offers,1,"b.y",100,false).status==CreateStatus::AlreadyPresent);
+    Check(ChooseFreightSlot(offers,1,"d.z",100,false).status==CreateStatus::ReplaceRequired);
+    Check(ChooseFreightSlot(offers,1,"d.z",100,true).index==0);
+    Check(ChooseFreightSlot(offers,3,"d.z",100,false).index==2);
+    offers[0].expires=100;Check(ChooseFreightSlot(offers,3,"d.z",100,false).index==0);
+    offers.resize(2);offers[0].expires=200;
+    Check(ChooseFreightSlot(offers,3,"d.z",100,false).status==CreateStatus::ReplaceRequired);
+    Check(ChooseFreightSlot(offers,3,"d.z",100,true).status==CreateStatus::Created);
+    Check(ChooseFreightSlot({},3,"d.z",100,true).status==CreateStatus::NoSlot);
+    std::uintptr_t candidates[]={11,22,33};Check(KeepCandidate(candidates,3,22)==1 && candidates[0]==22);
+    Check(KeepCandidate(candidates,3,44)==0);
+    using namespace custom_jobs::creation;
+    List list;std::vector<EventNode> selected;
+    list.Put<std::uintptr_t>(0x600,0xaaa);list.Put<std::uintptr_t>(0x610,0xbbb);
+    list.Put<std::uint32_t>(0x618,0x12345678);
+    std::uintptr_t rows[]={0x600,0x610};std::uint64_t row_count=2;
+    Check(!KeepDestination(list.read,rows,row_count,1,0xbbb)&&row_count==0);
+    row_count=2;Check(KeepDestination(list.read,rows,row_count,UINT64_MAX,0xbbb)&&row_count==1&&rows[0]==0x610);
+    Check(list.Get<std::uint32_t>(rows[0]+8)==0x12345678); // Borrowed route metadata stays intact.
+    Check(CollectSlotEvents(list.read,list.writable,0x100,0xaaa,0,selected));
+    Check(selected.size()==2 && selected[0].node==0x200 && selected[1].node==0x2c0);
+    for(const auto& event:selected)Check(UnlinkSlotEvent(list.read,list.writable,list.write,0x100,event.node));
+    Check(list.Get<std::uint64_t>(0x140)==2);
+    Check(CollectSlotEvents(list.read,list.writable,0x100,0xaaa,0,selected)&&selected.empty());
+    Check(CollectSlotEvents(list.read,list.writable,0x100,0xaaa,1,selected)&&selected.size()==1&&selected[0].node==0x240);
+    Check(CollectSlotEvents(list.read,list.writable,0x100,0xbbb,0,selected)&&selected.size()==1&&selected[0].node==0x280);
+    Check(!UnlinkSlotEvent(list.read,list.writable,list.write,0x100,0x148));
+    List corrupt;corrupt.Put<std::uintptr_t>(0x208,0x999);
+    Check(!CollectSlotEvents(corrupt.read,corrupt.writable,0x100,0xaaa,0,selected));
+    Check(!UnlinkSlotEvent(corrupt.read,corrupt.writable,corrupt.write,0x100,0x200)&&corrupt.writes==0);
+    List cycle;cycle.Put<std::uintptr_t>(0x2c0,0x200);
+    Check(!CollectSlotEvents(cycle.read,cycle.writable,0x100,0xaaa,0,selected));
+    List count;count.Put<std::uint64_t>(0x140,3);
+    Check(!CollectSlotEvents(count.read,count.writable,0x100,0xaaa,0,selected));
+    std::puts("Creation selection, queue, replacement and targeted event checks passed.");
+}

@@ -16,6 +16,8 @@ bool was_ready = false;
 Logger log = nullptr;
 Availability availability = Availability::UnsupportedCode;
 CatalogNameCode name_code{};
+bool creation_supported=false;
+RequestQueue creation_queue;
 bool Memory(std::uintptr_t address, void* bytes, std::size_t length) {
     if (!ReadableMemory(address, length)) return false;
     std::memcpy(bytes, reinterpret_cast<const void*>(address), length); return true;
@@ -48,7 +50,8 @@ void Reset() {
     auto next = std::make_shared<View>(); next->session = ++session; next->supported = pools != 0;
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
-    Publish(std::move(next));
+    next->creation_supported = creation_supported;
+    std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();view=std::move(next);
 }
 void Observe(std::uintptr_t economy, bool ready) {
     if (was_ready && (!ready || economy != last_economy)) Reset();
@@ -60,6 +63,7 @@ void Scan(std::uintptr_t economy) {
     auto next = std::make_shared<View>(); next->session = session; next->supported = pools != 0;
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
+    next->creation_supported = creation_supported;
     std::map<std::pair<LabelKind,std::uintptr_t>,std::string> cache;
     LabelReader labels;
     if (name_code.localize) labels = [&](LabelKind kind,std::uintptr_t object) -> std::string {
@@ -110,6 +114,57 @@ void Scan(std::uintptr_t economy) {
     Publish(std::move(next));
 }
 std::shared_ptr<const View> Snapshot() { std::lock_guard<std::mutex> lock(mutex); return view; }
+void EnableCreation(const GameProfile& core,const CreationCode& code,creation::Backend backend){
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    creation_supported=creation::Initialize(module,core,code,backend,log);
+#else
+    (void)core;(void)code;(void)backend;creation_supported=false;
+#endif
+    auto next=std::make_shared<View>(*Snapshot());next->creation_supported=creation_supported;Publish(std::move(next));
+}
+bool QueueCreation(const JobRequest& request){
+    std::lock_guard<std::mutex> lock(mutex);
+    return view->creation_supported && view->scanned && request.session==view->session && ValidSelection(view->catalog,request) && creation_queue.Push(request);
+}
+void CancelCreation(){std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();}
+CreateResult ExecuteCreation(std::uintptr_t economy){
+    std::optional<JobRequest> request;
+    {std::lock_guard<std::mutex> lock(mutex);request=creation_queue.Take();}
+    if(!request)return {};
+    CreateResult result{CreateStatus::Cancelled,request->market};
+    if(!was_ready || economy!=last_economy)result.status=CreateStatus::NotReady;
+    else if(request->session!=session)result.status=CreateStatus::Cancelled;
+    else if(!creation_supported)result.status=CreateStatus::Unsupported;
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    else result=creation::Execute(economy,pools,*request);
+#endif
+    const auto current=Snapshot();
+    if(current->session==request->session){auto next=std::make_shared<View>(*current);next->has_creation_result=true;next->creation_result=result;Publish(std::move(next));}
+    if(log){const auto message="Custom job request completed: status="+std::to_string(static_cast<int>(result.status))+", source="+request->origin+", cargo="+request->cargo+", destination="+request->destination+".";log(message.c_str());}
+    return result;
+}
+std::string CreationMessage(CreateResult result,bool ru){
+    auto tr=[&](const char* en,const char* russian){return std::string(ru?russian:en);};
+    switch(result.status){
+    case CreateStatus::Created:return result.market==Market::OwnedTrailer?
+        tr("Job created. Reopen the owned-trailer cargo market and find the offer at the selected source company.","Заказ создан. Заново откройте биржу грузов для своего прицепа и найдите предложение на выбранной базе отправления."):
+        tr("Job created. Reopen the Freight market and find the offer at the selected source company.","Заказ создан. Заново откройте рынок грузоперевозок и найдите предложение на выбранной базе отправления.");
+    case CreateStatus::AlreadyPresent:return tr("This job is already available at the selected company.","Такой заказ уже есть на выбранной базе.");
+    case CreateStatus::Unsupported:return tr("Job creation is unavailable for this game code. See game.log.txt.","Создание заказа недоступно для этого кода игры. Подробности в game.log.txt.");
+    case CreateStatus::NotReady:return tr("The profile is not ready. Load the session and try again.","Профиль ещё не готов. Загрузите сессию и повторите действие.");
+    case CreateStatus::Cancelled:return tr("The request was cancelled. Read the loaded session again.","Запрос отменён. Заново считайте загруженную сессию.");
+    case CreateStatus::InvalidSelection:return tr("The selected source, cargo or destination is no longer available. Read the session again.","Выбранная база, груз или получатель больше недоступны. Заново считайте сессию.");
+    case CreateStatus::TrailerRequired:return tr("Select an owned trailer before creating its cargo offer.","Перед созданием груза выберите свой прицеп.");
+    case CreateStatus::CargoUnavailable:return tr("This cargo is not compatible with the selected owned trailer or its limits.","Этот груз не подходит выбранному собственному прицепу или его ограничениям.");
+    case CreateStatus::DestinationUnavailable:return tr("The game rejected this destination for the cargo, route or trailer.","Игра не допускает этого получателя для выбранного груза, маршрута или прицепа.");
+    case CreateStatus::NoSlot:return tr("This company has no available native job slots. Open its market or choose another company.","У этой базы нет доступных штатных слотов заказов. Откройте её рынок или выберите другую базу.");
+    case CreateStatus::ReplaceRequired:return tr("Enable replacement of one offer at the source company, then try again.","Разрешите замену одного предложения на базе отправления и повторите действие.");
+    case CreateStatus::AllocationFailed:return tr("The game could not allocate the new offer.","Игра не смогла выделить память для нового предложения.");
+    case CreateStatus::SchedulingFailed:return tr("The game could not register the offer expiry. The request was not committed.","Не удалось зарегистрировать срок предложения. Запрос не был применён.");
+    case CreateStatus::GenerationFailed:return tr("The native generator did not create the exact requested job. Try another cargo or destination.","Штатный генератор не создал точно выбранный заказ. Попробуйте другой груз или получателя.");
+    default:return tr("Game data failed validation. No custom offer was committed. See game.log.txt.","Данные игры не прошли проверку. Новый заказ не применён. Подробности в game.log.txt.");
+    }
+}
 bool ContainsName(std::string_view text, std::string_view query) {
     if (query.empty()) return true;
     auto wide=[](std::string_view value) {
@@ -124,13 +179,19 @@ bool ContainsName(std::string_view text, std::string_view query) {
         if(CompareStringOrdinal(value.data()+n,static_cast<int>(needle.size()),needle.data(),static_cast<int>(needle.size()),TRUE)==CSTR_EQUAL)return true;
     return false;
 }
-void Shutdown() { pools = module = 0; name_code = {}; log = nullptr; availability = Availability::UnsupportedCode; Reset(); }
+void Shutdown() {
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    creation::Shutdown();
+#endif
+    creation_supported=false;pools=module=0;name_code={};log=nullptr;availability=Availability::UnsupportedCode;Reset();
+}
 #ifdef CARGO_CONTROL_CATALOG_PREVIEW
 void PreviewCatalog(Catalog catalog) {
     auto next = std::make_shared<View>(); next->session = ++session;
     next->supported = next->scanned = true; next->catalog = std::move(catalog);
     next->availability = Availability::Ready;
     next->names_supported = true;
+    next->creation_supported = true;
     Publish(std::move(next));
 }
 #endif

@@ -26,6 +26,9 @@ namespace catalog162 {
 namespace catalog_names162 {
 #include "custom_name_signatures_162.inc"
 }
+namespace creation162 {
+#include "custom_creation_signatures_162.inc"
+}
 struct SignatureSet {
     const char* name;
     const char* ets2_name;
@@ -315,6 +318,49 @@ bool ResolveCatalogNames(const unsigned char* bytes, std::size_t size, CatalogNa
     }
     if (!preference) { reason="city label preference not found"; return false; }
     out={roots[0],table,core_roots[0],preference}; return true;
+}
+bool ResolveCreationCode(const unsigned char* bytes,std::size_t size,const GameProfile& core,CreationCode& out,std::string& reason) {
+    out={};reason.clear(); Image image{bytes,size};
+    if(!image.Parse() || core.schedule<9){reason="invalid creation image/profile";return false;}
+    using namespace creation162;
+    std::vector<std::uint32_t> resolved(std::size(signatures),0),symbols(symbol_count,0);
+    resolved[generator_index]=core.generator;resolved[fill_index]=core.fill_company;
+    resolved[clear_company_index]=core.clear_company;resolved[schedule_index]=core.schedule-9;
+    resolved[refill_index]=core.refill;resolved[clear_vector_index]=core.clear_vector;
+    std::vector<bool> checked(resolved.size(),false);
+    std::vector<Reference> references;
+    bool progress=true;
+    while(progress){
+        progress=false;
+        for(std::size_t n=0;n<resolved.size();++n){
+            if(!resolved[n] || checked[n])continue;
+            if(!std::binary_search(image.starts.begin(),image.starts.end(),resolved[n]) ||
+                !Match(image,signatures[n],resolved[n],false,references)){
+                reason=std::string("incompatible creation function: ")+signatures[n].name;return false;
+            }
+            checked[n]=true;progress=true;
+            for(const auto& ref:references){
+                if(ref.callee>=0){
+                    if(resolved[ref.callee] && resolved[ref.callee]!=ref.address){reason="conflicting creation function links";return false;}
+                    resolved[ref.callee]=ref.address;
+                }
+                if(ref.symbol>=0){
+                    if(symbols[ref.symbol] && symbols[ref.symbol]!=ref.address){reason="conflicting creation global links";return false;}
+                    symbols[ref.symbol]=ref.address;
+                }
+            }
+        }
+    }
+    if(std::find(checked.begin(),checked.end(),false)!=checked.end()){reason="incomplete creation graph";return false;}
+    const auto index=symbols[allocator_index_symbol],array=symbols[allocator_array_symbol],prefix=symbols[destination_prefix_symbol];
+    if(!image.In(index,4,IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE,IMAGE_SCN_MEM_EXECUTE) ||
+        !image.In(array,4*8,IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE,IMAGE_SCN_MEM_EXECUTE) ||
+        !image.In(prefix,8,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_EXECUTE)){
+        reason="invalid creation globals";return false;
+    }
+    out={resolved[owned_candidates_index],resolved[base_candidates_index],resolved[destinations_index],resolved[base_slot_index],
+         resolved[base_factory_index],resolved[schedule_index],resolved[free_event_node_index],resolved[physical_update_index],index,array,prefix};
+    return true;
 }
 bool ReadExecutableVersion(const wchar_t* path, ExecutableVersion& out) {
     out = {};

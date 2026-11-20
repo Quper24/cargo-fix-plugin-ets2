@@ -1,6 +1,7 @@
 #pragma once
 #include "custom_job_catalog.h"
 #include "game_profile.h"
+#include "custom_job_creation.h"
 #include <filesystem>
 #include <memory>
 #include <string_view>
@@ -12,6 +13,9 @@ struct View {
     bool supported = false;
     bool scanned = false;
     bool names_supported = false;
+    bool creation_supported = false;
+    bool has_creation_result = false;
+    CreateResult creation_result;
     Availability availability = Availability::UnsupportedCode;
     Catalog catalog;
     std::string error;
@@ -21,6 +25,11 @@ void Initialize(std::uintptr_t module, std::size_t image_size, Logger logger);
 void Reset();
 void Observe(std::uintptr_t economy, bool ready);
 void Scan(std::uintptr_t economy);
+void EnableCreation(const GameProfile& core,const CreationCode& code,creation::Backend backend);
+bool QueueCreation(const JobRequest& request);
+void CancelCreation();
+CreateResult ExecuteCreation(std::uintptr_t economy);
+std::string CreationMessage(CreateResult result,bool russian);
 std::shared_ptr<const View> Snapshot();
 void Shutdown();
 bool ContainsName(std::string_view text, std::string_view query);

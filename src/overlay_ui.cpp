@@ -220,7 +220,7 @@ void DrawMenu(int preview_page = -1) {
         ImGui::PushStyleColor(ImGuiCol_CheckMark,accent);
         ImGui::PushStyleColor(ImGuiCol_Header,ImVec4(.2f,.3f,.18f,1));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered,ImVec4(.25f,.35f,.22f,1));
-        custom_jobs::DrawCatalog(scale,notifications::Russian(),[]{Request(3);CloseMenu();});
+        custom_jobs::DrawCatalog(scale,notifications::Russian(),[]{Request(3);CloseMenu();},[]{Request(4);CloseMenu();});
         ImGui::PopStyleColor(6);
         ImGui::EndChild();
         text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT " dev");
@@ -419,7 +419,7 @@ void Notify(const std::wstring& text) { std::lock_guard<std::recursive_mutex> gu
 void Request(int action) {
     if(action==1 || action==2) requested=action;
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
-    else if(action==3) requested=action;
+    else if(action==3 || action==4) requested=action;
 #endif
 }
 int Tick() { return requested.exchange(0); }

@@ -40,6 +40,15 @@ int wmain(int argc, wchar_t** argv) {
     Check(fixture);
     std::uint32_t pools=0; std::string error;
     Check(ResolveCatalogPools(image.data(),image.size(),pools,error) && pools==fixture->pools);
+    GameProfile core{};
+    Check(ResolveGameProfile(image.data(),image.size(),path.filename()==L"amtrucks.exe"?GameKind::ATS:GameKind::ETS2,core,error));
+    CreationCode creation;
+    if(!ResolveCreationCode(image.data(),image.size(),core,creation,error))std::fprintf(stderr,"Creation resolver: %s\n",error.c_str());
+    Check(creation.base_slot && creation.base_factory && creation.owned_candidates && creation.free_event_node && creation.physical_update);
+    image[creation.destinations]^=1;
+    CreationCode rejected;
+    Check(!ResolveCreationCode(image.data(),image.size(),core,rejected,error) && !rejected.base_slot);
+    image[creation.destinations]^=1;
     CatalogNameCode names;
     if (!ResolveCatalogNames(image.data(),image.size(),names,error)) std::fprintf(stderr,"Name resolver: %s\n",error.c_str());
     Check(names.localize && names.buffer_vtable && names.city_location && names.city_localized_flag);
@@ -113,6 +122,10 @@ int wmain(int argc, wchar_t** argv) {
         functions[n].BeginAddress+=shift; functions[n].EndAddress+=shift; functions[n].UnwindData+=shift;
     }
     Check(ResolveCatalogPools(moved.data(),moved.size(),pools,error) && pools==fixture->pools+shift);
+    GameProfile moved_core{};CreationCode moved_creation;
+    Check(ResolveGameProfile(moved.data(),moved.size(),path.filename()==L"amtrucks.exe"?GameKind::ATS:GameKind::ETS2,moved_core,error));
+    Check(ResolveCreationCode(moved.data(),moved.size(),moved_core,moved_creation,error));
+    Check(moved_creation.base_slot==creation.base_slot+shift && moved_creation.allocator_array==creation.allocator_array+shift);
     custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(moved.data()),moved.size(),nullptr);
     Check(custom_jobs::Snapshot()->supported);
     image[fixture->guard_rva]^=1;
