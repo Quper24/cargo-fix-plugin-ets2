@@ -40,8 +40,39 @@ int wmain(int argc, wchar_t** argv) {
     Check(fixture);
     std::uint32_t pools=0; std::string error;
     Check(ResolveCatalogPools(image.data(),image.size(),pools,error) && pools==fixture->pools);
+    CatalogNameCode names;
+    if (!ResolveCatalogNames(image.data(),image.size(),names,error)) std::fprintf(stderr,"Name resolver: %s\n",error.c_str());
+    Check(names.localize && names.buffer_vtable && names.city_location && names.city_localized_flag);
+    const auto expected_names=names;
+    image[expected_names.localize]^=1;
+    Check(!ResolveCatalogNames(image.data(),image.size(),names,error) && !names.localize);
+    Check(ResolveCatalogPools(image.data(),image.size(),pools,error)); // Names may fail without disabling the catalog.
+    image[expected_names.localize]^=1;
+    std::uint64_t reserve_pointer=0;
+    std::memcpy(&reserve_pointer,image.data()+expected_names.buffer_vtable+16,8);
+    const auto wrong_reserve=reserve_pointer+1;
+    std::memcpy(image.data()+expected_names.buffer_vtable+16,&wrong_reserve,8);
+    Check(!ResolveCatalogNames(image.data(),image.size(),names,error) && !names.localize);
+    std::memcpy(image.data()+expected_names.buffer_vtable+16,&reserve_pointer,8);
+    bool changed_property=false;
+    for(unsigned n=0;n<nt->FileHeader.NumberOfSections && !changed_property;++n) {
+        const auto& s=sections[n];
+        if(!(s.Characteristics&IMAGE_SCN_MEM_WRITE))continue;
+        for(std::uint64_t at=s.VirtualAddress+32;at+8<=std::uint64_t(s.VirtualAddress)+s.Misc.VirtualSize;at+=8) {
+            std::uint64_t pointer=0;std::memcpy(&pointer,image.data()+at,8);
+            if(pointer<nt->OptionalHeader.ImageBase)continue;
+            const auto rva=pointer-nt->OptionalHeader.ImageBase;
+            constexpr char property[]="city_name_localized";
+            if(rva>image.size()-sizeof(property) || std::memcmp(image.data()+rva,property,sizeof(property)))continue;
+            image[at-24]^=1;
+            Check(!ResolveCatalogNames(image.data(),image.size(),names,error));
+            image[at-24]^=1;changed_property=true;break;
+        }
+    }
+    Check(changed_property && ResolveCatalogNames(image.data(),image.size(),names,error));
     custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(image.data()),image.size(),nullptr);
     Check(custom_jobs::Snapshot()->supported);
+    Check(custom_jobs::Snapshot()->names_supported);
     Check(custom_jobs::Snapshot()->availability==custom_jobs::Availability::Ready);
     custom_jobs::Observe(1,true); custom_jobs::Observe(1,false);
     Check(custom_jobs::Snapshot()->supported && !custom_jobs::Snapshot()->scanned);
@@ -60,6 +91,7 @@ int wmain(int argc, wchar_t** argv) {
         }
     }
     Check(changed && ResolveCatalogPools(image.data(),image.size(),pools,error));
+    Check(ResolveCatalogNames(image.data(),image.size(),names,error) && names.localize==expected_names.localize);
     custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(image.data()),image.size(),nullptr);
     Check(custom_jobs::Snapshot()->supported);
     // A synthetic compatible update moves every function/global to a new RVA.

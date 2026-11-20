@@ -23,6 +23,9 @@ namespace code162 {
 namespace catalog162 {
 #include "custom_job_signatures_162.inc"
 }
+namespace catalog_names162 {
+#include "custom_name_signatures_162.inc"
+}
 struct SignatureSet {
     const char* name;
     const char* ets2_name;
@@ -170,6 +173,64 @@ void Guard(GameProfile& profile, unsigned index, const Image& image, std::uint32
     auto& guard = profile.guards[index]; guard.rva = rva; guard.length = length;
     std::copy_n(image.data + rva, length, guard.bytes.begin());
 }
+
+bool ResolveSet(const Image& image, const Signature* signatures, std::size_t count, unsigned symbol_count,
+                std::vector<std::uint32_t>& resolved, std::vector<std::uint32_t>& symbols, std::string& reason) {
+    resolved.assign(count,0); symbols.assign(symbol_count,0);
+    std::vector<Reference> references, current;
+    for (std::size_t n=0;n<count;++n) {
+        unsigned matches=0;
+        const auto& signature=signatures[n]; const auto& first=signature.instructions[0];
+        for (const auto candidate:image.starts) {
+            if (!image.Code(candidate,first.size) || std::memcmp(image.data+candidate,first.bytes,first.size)) continue;
+            if (Match(image,signature,candidate,false,current)) {
+                resolved[n]=candidate; references.insert(references.end(),current.begin(),current.end());
+                if (++matches>1) break;
+            }
+        }
+        if (matches!=1) { reason=std::string(matches?"ambiguous name signature: ":"incompatible name signature: ")+signature.name; return false; }
+    }
+    for (const auto& ref:references) {
+        if ((ref.callee>=0 && ref.address!=resolved[ref.callee]) ||
+            (ref.symbol>=0 && symbols[ref.symbol] && symbols[ref.symbol]!=ref.address)) {
+            reason="inconsistent name reference graph"; return false;
+        }
+        if (ref.symbol>=0) symbols[ref.symbol]=ref.address;
+    }
+    return true;
+}
+
+std::uint32_t PointerRva(const Image& image, std::uint64_t address) {
+    const auto actual=reinterpret_cast<std::uintptr_t>(image.data);
+    if (address>=actual && address-actual<image.size) return static_cast<std::uint32_t>(address-actual);
+    const auto pe=Read<std::uint32_t>(image.data+0x3c);
+    const auto preferred=Read<IMAGE_NT_HEADERS64>(image.data+pe).OptionalHeader.ImageBase;
+    if (address>=preferred && address-preferred<image.size) return static_cast<std::uint32_t>(address-preferred);
+    return UINT32_MAX;
+}
+struct PropertyCheck { const char* name; std::uint64_t offset, type; };
+bool PropertyGroup(const Image& image, const PropertyCheck* checks, unsigned count) {
+    unsigned matches=0;
+    for (const auto& section:image.sections) {
+        if (!(section.flags&IMAGE_SCN_MEM_READ) || (section.flags&IMAGE_SCN_MEM_EXECUTE)) continue;
+        for (std::uint64_t at=section.rva;at+std::uint64_t(count)*40<=std::uint64_t(section.rva)+section.size;at+=8) {
+            if (Read<std::uint64_t>(image.data+at+8)!=checks[0].offset || Read<std::uint64_t>(image.data+at+16)!=checks[0].type) continue;
+            const auto owner=Read<std::uint64_t>(image.data+at);
+            if (!image.In(PointerRva(image,owner),8,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_WRITE|IMAGE_SCN_MEM_EXECUTE)) continue;
+            bool valid=true;
+            for (unsigned n=0;n<count && valid;++n) {
+                const auto p=at+n*40;
+                const auto name=PointerRva(image,Read<std::uint64_t>(image.data+p+32));
+                const auto length=std::strlen(checks[n].name)+1;
+                valid=Read<std::uint64_t>(image.data+p)==owner && Read<std::uint64_t>(image.data+p+8)==checks[n].offset &&
+                    Read<std::uint64_t>(image.data+p+16)==checks[n].type && image.In(name,length,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_WRITE|IMAGE_SCN_MEM_EXECUTE) &&
+                    !std::memcmp(image.data+name,checks[n].name,length);
+            }
+            if (valid && ++matches>1) return false;
+        }
+    }
+    return matches==1;
+}
 }
 
 GameKind IdentifyGame(std::string_view id) {
@@ -213,6 +274,47 @@ bool ResolveCatalogPools(const unsigned char* bytes, std::size_t size,
         reason = "invalid catalog token pools"; return false;
     }
     pools_rva = pools; return true;
+}
+bool ResolveCatalogNames(const unsigned char* bytes, std::size_t size, CatalogNameCode& out, std::string& reason) {
+    out={}; reason.clear(); Image image{bytes,size};
+    if (!image.Parse()) { reason="invalid name PE image"; return false; }
+    std::vector<std::uint32_t> roots,symbols,core_roots,core_symbols;
+    if (!ResolveSet(image,catalog_names162::signatures,std::size(catalog_names162::signatures),catalog_names162::symbol_count,roots,symbols,reason) ||
+        !ResolveSet(image,catalog162::signatures,std::size(catalog162::signatures),catalog162::symbol_count,core_roots,core_symbols,reason)) return false;
+    const auto table=symbols[catalog_names162::buffer_vtable_symbol];
+    if (!image.In(table,32,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_WRITE|IMAGE_SCN_MEM_EXECUTE)) { reason="invalid name buffer table"; return false; }
+    const auto reserve=PointerRva(image,Read<std::uint64_t>(bytes+table+16));
+    const auto clear=PointerRva(image,Read<std::uint64_t>(bytes+table+24));
+    const auto dynamic=PointerRva(image,Read<std::uint64_t>(bytes+table+8));
+    const unsigned char reserve_code[]={0xb8,0,8,0,0,0xc3};
+    const unsigned char clear_code[]={0xc6,0x41,0x18,0,0xc3};
+    const unsigned char dynamic_code[]={0x32,0xc0,0xc3};
+    if (!image.Code(reserve,sizeof(reserve_code)) || std::memcmp(bytes+reserve,reserve_code,sizeof(reserve_code)) ||
+        !image.Code(clear,sizeof(clear_code)) || std::memcmp(bytes+clear,clear_code,sizeof(clear_code)) ||
+        !image.Code(dynamic,sizeof(dynamic_code)) || std::memcmp(bytes+dynamic,dynamic_code,sizeof(dynamic_code))) {
+        reason="incompatible fixed name buffer"; return false;
+    }
+    const PropertyCheck cargo[]={{"name",0x10,1},{"icon",0x30,1},{"unit_reward_per_km",0x50,5},{"fragility",0x54,5},{"valuable",0x5c,0x39}};
+    const PropertyCheck company[]={{"name",0x10,1},{"sort_name",0x30,1},{"parent_company",0x50,1}};
+    const PropertyCheck city[]={{"city_name",0x10,1},{"city_name_localized",0x30,1},{"short_city_name",0x50,1}};
+    if (!PropertyGroup(image,cargo,std::size(cargo)) || !PropertyGroup(image,company,std::size(company)) || !PropertyGroup(image,city,std::size(city))) {
+        reason="incompatible display-name field metadata"; return false;
+    }
+    // The game's city labels select +18 or +38 using this shared locale preference.
+    const unsigned char city_select[]={0x0f,0xb6,0x05,0,0,0,0,0x84,0xc0,0xb9,0x18,0,0,0,0x0f,0x45,0xca,0x4c,0x8b,0x1c,0x0f};
+    std::uint32_t preference=0;
+    for (const auto& section:image.sections) {
+        if (!(section.flags&IMAGE_SCN_MEM_EXECUTE)) continue;
+        for (std::uint64_t at=section.rva;at+sizeof(city_select)<=std::uint64_t(section.rva)+section.size;++at) {
+            if (std::memcmp(bytes+at,city_select,3) || std::memcmp(bytes+at+7,city_select+7,sizeof(city_select)-7)) continue;
+            const auto target=static_cast<std::int64_t>(at)+7+Read<std::int32_t>(bytes+at+3);
+            if (target<0 || target>UINT32_MAX || !image.In(static_cast<std::uint32_t>(target),1,IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE,IMAGE_SCN_MEM_EXECUTE) ||
+                (preference && preference!=target)) { reason="inconsistent city label preference"; return false; }
+            preference=static_cast<std::uint32_t>(target);
+        }
+    }
+    if (!preference) { reason="city label preference not found"; return false; }
+    out={roots[0],table,core_roots[0],preference}; return true;
 }
 bool ReadExecutableVersion(const wchar_t* path, ExecutableVersion& out) {
     out = {};

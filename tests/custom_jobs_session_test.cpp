@@ -4,6 +4,9 @@
 #define Check(value) do { if (!(value)) { std::fprintf(stderr,"Session check failed: %d\n",__LINE__); std::exit(1); } } while(0)
 int main() {
     using namespace custom_jobs;
+    Check(ContainsName("СОЛЬ","соль") && ContainsName("Груз: Соль","СО"));
+    Check(ContainsName("FedEx","fedex") && ContainsName("Coca-Cola","cola"));
+    Check(!ContainsName("Pepsi","FedEx") && ContainsName("Москва",""));
     Initialize(0, 0, nullptr);
     const auto first = Snapshot();
     Check(!first->supported && !first->scanned && first->catalog.companies.empty());
@@ -18,5 +21,5 @@ int main() {
     Observe(300,true); Check(Snapshot()->session!=loaded->session);
     Scan(300); Check(!Snapshot()->scanned && !Snapshot()->error.empty()); // Unknown EXE never triggers reads.
     Shutdown(); Check(!Snapshot()->supported && Snapshot()->error.empty());
-    std::puts("Catalog lifecycle: lost readiness, changed economy, immutable snapshots and unsupported EXE passed.");
+    std::puts("Catalog lifecycle and case-insensitive Cyrillic/brand-name search passed.");
 }

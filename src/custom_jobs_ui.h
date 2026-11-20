@@ -45,12 +45,21 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
                 static_cast<unsigned long long>(catalog.cargos.size()));
     if (catalog.skipped) ImGui::TextDisabled(tr("Unreadable entries skipped: %llu", "Пропущено нечитаемых записей: %llu"),
                                             static_cast<unsigned long long>(catalog.skipped));
-    ImGui::TextDisabled("%s", tr("Prototype lists show game identifiers.", "В прототипе показаны игровые идентификаторы."));
+    ImGui::TextDisabled("%s", state->names_supported ?
+        tr("Names from the loaded game and its mods.", "Названия из загруженной игры и её модов.") :
+        tr("Display names unavailable; identifiers shown.", "Названия пока недоступны; показаны идентификаторы."));
+    if(catalog.label_fallbacks)ImGui::TextDisabled("%s",tr("Some missing names use identifiers.","Для части ненайденных названий показаны идентификаторы."));
     ImGui::RadioButton(tr("Freight market", "Грузоперевозки"), &market, 0); ImGui::SameLine();
     ImGui::RadioButton(tr("Owned trailer", "Собственный прицеп"), &market, 1);
     ImGui::SetNextItemWidth(320 * scale);
     ImGui::InputText(tr("Filter names", "Поиск по названиям"), search.data(), search.size());
-    auto visible = [&](const std::string& value) { return value.find(search.data()) != std::string::npos; };
+    auto visible = [&](const std::string& value) { return ContainsName(value,search.data()); };
+    std::map<std::string,std::string> city_names,cargo_names;
+    for(const auto& company:catalog.companies)city_names.emplace(company.city,company.city_name.empty()?company.city:company.city_name);
+    for(const auto& cargo:catalog.cargos)cargo_names.emplace(cargo.id,cargo.name);
+    auto cargo_label=[&](const std::string& id) -> const std::string& {
+        const auto found=cargo_names.find(id);return found==cargo_names.end()?id:found->second;
+    };
     auto find_company = [&](const std::string& id) -> const Company* {
         for (const auto& company : catalog.companies) if (company.id == id) return &company;
         return nullptr;
@@ -58,15 +67,19 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     const auto* origin = find_company(origin_id);
     if (!origin && !origin_id.empty()) { origin_id.clear(); cargo_id.clear(); destination_id.clear(); }
     auto city_select = [&](const char* label, std::string& selected, bool destination) {
-        std::set<std::string> cities;
+        std::map<std::string,std::string> cities;
         for (const auto& company : catalog.companies)
             if (!destination || (!cargo_id.empty() && company.id != origin_id && Accepts(company, cargo_id)))
-                cities.insert(company.city);
+                cities.emplace(company.city,city_names[company.city]);
+        std::vector<std::pair<std::string,std::string>> sorted(cities.begin(),cities.end());
+        std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second==b.second?a.first<b.first:a.second<b.second;});
         bool changed = false;
         ImGui::SetNextItemWidth(310 * scale);
-        if (ImGui::BeginCombo(label, selected.empty() ? tr("Select...", "Выберите...") : selected.c_str())) {
-            for (const auto& city : cities) if (visible(city) && ImGui::Selectable(city.c_str(), selected == city)) {
-                selected = city; changed = true;
+        if (ImGui::BeginCombo(label, selected.empty() ? tr("Select...", "Выберите...") : city_names[selected].c_str())) {
+            for (const auto& city : sorted) if (visible(city.second)) {
+                ImGui::PushID(city.first.c_str());
+                if(ImGui::Selectable(city.second.c_str(),selected==city.first)){selected=city.first;changed=true;}
+                ImGui::PopID();
             }
             ImGui::EndCombo();
         }
@@ -77,9 +90,12 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         bool changed = false;
         ImGui::SetNextItemWidth(310 * scale);
         if (ImGui::BeginCombo(label, company ? company->name.c_str() : tr("Select...", "Выберите..."))) {
-            for (const auto& base : catalog.companies) {
-                if (base.city != city || !visible(base.name) ||
-                    (destination && (cargo_id.empty() || base.id == origin_id || !Accepts(base, cargo_id)))) continue;
+            std::vector<const Company*> bases;
+            for(const auto& base:catalog.companies)
+                if(base.city==city && visible(base.name) && (!destination || (!cargo_id.empty() && base.id!=origin_id && Accepts(base,cargo_id))))bases.push_back(&base);
+            std::sort(bases.begin(),bases.end(),[](const auto* a,const auto* b){return a->name==b->name?a->id<b->id:a->name<b->name;});
+            for (const auto* item : bases) {
+                const auto& base=*item;
                 ImGui::PushID(base.id.c_str());
                 if (ImGui::Selectable(base.name.c_str(), base.id == selected)) { selected = base.id; changed = true; }
                 ImGui::PopID();
@@ -99,9 +115,15 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         cargo_id.clear(); destination_id.clear();
     }
     ImGui::SetNextItemWidth(310 * scale);
-    if (ImGui::BeginCombo(tr("Cargo", "Груз"), cargo_id.empty() ? tr("Select...", "Выберите...") : cargo_id.c_str())) {
-        if (origin) for (const auto& cargo : origin->outgoing) if (visible(cargo) && ImGui::Selectable(cargo.c_str(), cargo_id == cargo)) {
-            cargo_id = cargo; destination_city.clear(); destination_id.clear();
+    if (ImGui::BeginCombo(tr("Cargo", "Груз"), cargo_id.empty() ? tr("Select...", "Выберите...") : cargo_label(cargo_id).c_str())) {
+        std::vector<std::string> available=origin?origin->outgoing:std::vector<std::string>{};
+        std::sort(available.begin(),available.end(),[&](const auto& a,const auto& b){return cargo_label(a)==cargo_label(b)?a<b:cargo_label(a)<cargo_label(b);});
+        for (const auto& cargo : available) if (visible(cargo_label(cargo))) {
+            ImGui::PushID(cargo.c_str());
+            if(ImGui::Selectable(cargo_label(cargo).c_str(),cargo_id==cargo)) {
+                cargo_id=cargo;destination_city.clear();destination_id.clear();
+            }
+            ImGui::PopID();
         }
         ImGui::EndCombo();
     }

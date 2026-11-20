@@ -16,3 +16,8 @@ bool ResolveGameProfile(const unsigned char* image, std::size_t size, GameKind g
 // independently of executable hashes and patch/build version numbers.
 bool ResolveCatalogPools(const unsigned char* image, std::size_t size,
                          std::uint32_t& pools_rva, std::string& reason);
+struct CatalogNameCode {
+    std::uint32_t localize = 0, buffer_vtable = 0, city_location = 0, city_localized_flag = 0;
+};
+bool ResolveCatalogNames(const unsigned char* image, std::size_t size,
+                         CatalogNameCode& out, std::string& reason);

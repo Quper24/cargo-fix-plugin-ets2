@@ -1,4 +1,5 @@
 #include "custom_job_catalog.h"
+#include "custom_job_names.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -72,6 +73,35 @@ int main() {
     Check(from.id=="company.volatile.mod_depot.mod_city" && from.outgoing.size()==2);
     Check(to.name==from.name && to.city!=from.city); // Distinct bases with the same brand.
     Check(Accepts(to,"cargo.mod_cargo9") && !Accepts(to,"cargo.apples"));
+    const auto source_id=from.id;
+    std::string mod_brand="FedEx";
+    LabelReader labels=[&](LabelKind kind,std::uintptr_t object) -> std::string {
+        if(kind==LabelKind::Company)return mod_brand;
+        if(kind==LabelKind::City)return object==source?"Анн-Арбор":"Кенора";
+        return object==custom?"Соль":std::string{};
+    };
+    Check(BuildCatalog(first.reader,first.economy,first.pools,catalog,error,labels));
+    Check(catalog.companies[0].id==source_id && catalog.companies[0].name=="FedEx" && catalog.companies[0].city_name=="Анн-Арбор");
+    Check(catalog.label_fallbacks>0);
+    bool translated=false;
+    for(const auto& cargo:catalog.cargos)if(cargo.id=="cargo.mod_cargo9")translated=cargo.name=="Соль";
+    Check(translated && Accepts(catalog.companies[1],"cargo.mod_cargo9"));
+    mod_brand="Pepsi";
+    Check(BuildCatalog(first.reader,first.economy,first.pools,catalog,error,labels));
+    Check(catalog.companies[0].id==source_id && catalog.companies[0].name=="Pepsi"); // A renamed mod never changes object identity.
+    const auto native_text=first.Alloc(16);
+    const std::string salt="Соль";
+    std::memcpy(first.bytes.data()+native_text,salt.c_str(),salt.size()+1);
+    first.Put(custom+0x18,native_text);first.Put<std::uint32_t>(custom+0x20,static_cast<std::uint32_t>(salt.size()));
+    first.Put<std::uint32_t>(custom+0x24,16);
+    Check(ReadNativeName(first.reader,custom,0x10)==salt);
+    first.Put<std::uint32_t>(custom+0x24,static_cast<std::uint32_t>(salt.size()));
+    Check(ReadNativeName(first.reader,custom,0x10).empty());
+    first.Put<std::uint32_t>(custom+0x24,16);first.bytes[native_text+salt.size()]='x';
+    Check(ReadNativeName(first.reader,custom,0x10).empty());
+    Check(ReadNativeName(first.reader,UINTPTR_MAX-4,0x10).empty());
+    NativeNameBuffer output(123);
+    Check(output.data==output.bytes.data() && output.capacity==2048 && !output.length && !output.bytes[0]);
     Check(BuildCatalog(first.reader,first.economy,first.pools,catalog,error));
     Check(catalog.companies.size()==2 && catalog.cargos.size()==2); // Rescan does not append.
     first.Put<std::uint64_t>(first.economy+0x30,1000001);
@@ -99,5 +129,5 @@ int main() {
     second.Put<std::uint32_t>(newbase+8,0x80000001u);
     second.Put<std::uint32_t>(newbase+0xc,0); // Anonymous/invalid units are never guessed.
     Check(!BuildCatalog(second.reader,second.economy,second.pools,catalog,error));
-    std::puts("Session catalog: mod data, base identity, rescan, new world, invalid counts, pointers and tokens passed.");
+    std::puts("Session catalog: live mod labels, unchanged IDs after renaming, native strings, mod data, rescan, new world and corrupt data passed.");
 }

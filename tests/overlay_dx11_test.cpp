@@ -69,9 +69,9 @@ int wmain(int argc,wchar_t** argv) {
     Capture(dev.Get(),gpu.Get(),chain.Get(),nullptr,true); // Exact same palette on an sRGB backbuffer.
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     custom_jobs::Catalog fixture;
-    fixture.cargos.push_back({"cargo.mod_cargo9","mod_cargo9"});
-    fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","mod_depot",{"cargo.mod_cargo9"},{}});
-    fixture.companies.push_back({"company.volatile.other_base.other_city","other_city","other_base",{}, {"cargo.mod_cargo9"}});
+    fixture.cargos.push_back({"cargo.mod_cargo9","Соль"});
+    fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","FedEx",{"cargo.mod_cargo9"},{},"Анн-Арбор"});
+    fixture.companies.push_back({"company.volatile.other_base.other_city","other_city","Pepsi",{}, {"cargo.mod_cargo9"},"Кенора"});
     custom_jobs::PreviewCatalog(std::move(fixture));
     for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,true,1);
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>3?argv[3]:nullptr);

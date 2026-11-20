@@ -10,11 +10,14 @@
 namespace custom_jobs {
 using Reader = std::function<bool(std::uintptr_t, void*, std::size_t)>;
 struct Cargo { std::string id, name; };
-struct Company { std::string id, city, name; std::vector<std::string> outgoing, incoming; };
+struct Company { std::string id, city, name; std::vector<std::string> outgoing, incoming; std::string city_name; };
+enum class LabelKind { Cargo, Company, City };
+using LabelReader = std::function<std::string(LabelKind, std::uintptr_t)>;
 struct Catalog {
     std::vector<Company> companies;
     std::vector<Cargo> cargos;
     std::uint64_t skipped = 0;
+    std::uint64_t label_fallbacks = 0;
 };
 template<class T> bool Read(const Reader& reader, std::uintptr_t address, T& value) {
     value = {};
@@ -76,7 +79,7 @@ inline bool PointerList(const Reader& reader, std::uintptr_t object, unsigned da
     return !count || reader(data, values.data(), values.size() * sizeof(std::uintptr_t));
 }
 inline bool BuildCatalog(const Reader& reader, std::uintptr_t economy, std::uintptr_t pools,
-                         Catalog& catalog, std::string& error) {
+                         Catalog& catalog, std::string& error, const LabelReader& labels = {}) {
     catalog = {}; error.clear();
     std::vector<std::uintptr_t> companies;
     if (!pools || pools > UINTPTR_MAX - 2048 * 8 ||
@@ -99,6 +102,13 @@ inline bool BuildCatalog(const Reader& reader, std::uintptr_t economy, std::uint
             !UnitName(reader, pools, company, parts) || parts.size() != 4 ||
             parts[0] != "company" || parts[1] != "volatile") { ++result.skipped; continue; }
         entry.id = Join(parts); entry.city = parts[3]; entry.name = parts[2];
+        entry.city_name = entry.city;
+        if (labels) {
+            auto company_name = labels(LabelKind::Company, context);
+            auto city_name = labels(LabelKind::City, company);
+            if (!company_name.empty()) entry.name = std::move(company_name); else ++result.label_fallbacks;
+            if (!city_name.empty()) entry.city_name = std::move(city_name); else ++result.label_fallbacks;
+        }
         bool valid = true;
         for (const unsigned offset : {0xa0u, 0xc8u}) {
             if (!PointerList(reader, context, offset, 100000, cargo_pointers)) { valid = false; break; }
@@ -110,7 +120,9 @@ inline bool BuildCatalog(const Reader& reader, std::uintptr_t economy, std::uint
                     ++result.skipped; continue;
                 }
                 auto id = Join(parts);
-                local_cargos.emplace(id, Cargo{id, parts.back()}); list.push_back(std::move(id));
+                auto name = labels ? labels(LabelKind::Cargo, cargo) : std::string{};
+                if (name.empty()) { name = parts.back(); if (labels) ++result.label_fallbacks; }
+                local_cargos.emplace(id, Cargo{id, std::move(name)}); list.push_back(std::move(id));
             }
             std::sort(list.begin(), list.end()); list.erase(std::unique(list.begin(), list.end()), list.end());
         }
