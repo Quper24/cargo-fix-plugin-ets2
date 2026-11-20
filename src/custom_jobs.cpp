@@ -5,6 +5,7 @@
 #include "custom_job_names.h"
 #include <cstring>
 #include <mutex>
+#include <atomic>
 
 namespace custom_jobs {
 namespace {
@@ -18,12 +19,25 @@ Availability availability = Availability::UnsupportedCode;
 CatalogNameCode name_code{};
 bool creation_supported=false;
 RequestQueue creation_queue;
+std::uintptr_t last_trailer=UINTPTR_MAX;
+std::atomic<bool> refresh_trailer{false};
 bool Memory(std::uintptr_t address, void* bytes, std::size_t length) {
     if (!ReadableMemory(address, length)) return false;
     std::memcpy(bytes, reinterpret_cast<const void*>(address), length); return true;
 }
 void Publish(std::shared_ptr<View> next) {
     std::lock_guard<std::mutex> lock(mutex); view = std::move(next);
+}
+void UpdateTrailerCargos(View& next,std::uintptr_t economy){
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    const auto started=GetTickCount64();
+    next.trailer_cargos=creation::ReadTrailerCargos(economy,pools,next.catalog);
+    last_trailer=creation::TrailerIdentity(economy);
+    if(log)log(("Owned-trailer cargo filter: status="+std::to_string(static_cast<int>(next.trailer_cargos.status))+
+        ", companies="+std::to_string(next.trailer_cargos.companies.size())+", elapsed_ms="+std::to_string(GetTickCount64()-started)+".").c_str());
+#else
+    (void)next;(void)economy;
+#endif
 }
 }
 void Initialize(std::uintptr_t base, std::size_t image_size, Logger logger) {
@@ -47,6 +61,7 @@ void Initialize(std::uintptr_t base, std::size_t image_size, Logger logger) {
 }
 void Reset() {
     last_economy = 0; was_ready = false;
+    last_trailer=UINTPTR_MAX;refresh_trailer=false;
     auto next = std::make_shared<View>(); next->session = ++session; next->supported = pools != 0;
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
@@ -56,7 +71,16 @@ void Reset() {
 void Observe(std::uintptr_t economy, bool ready) {
     if (was_ready && (!ready || economy != last_economy)) Reset();
     was_ready = ready; last_economy = ready ? economy : 0;
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    if(ready && creation_supported){
+        const auto current=Snapshot();
+        if(current->scanned && (refresh_trailer.exchange(false) || creation::TrailerIdentity(economy)!=last_trailer)){
+            auto next=std::make_shared<View>(*current);UpdateTrailerCargos(*next,economy);Publish(std::move(next));
+        }
+    }
+#endif
 }
+void RefreshTrailerCargos(){refresh_trailer=true;}
 void Scan(std::uintptr_t economy) {
     if (last_economy && last_economy != economy) Reset();
     last_economy = economy;
@@ -111,6 +135,7 @@ void Scan(std::uintptr_t economy) {
         log(message.c_str());
         if (next->names_supported) log(("Session display names: unresolved occurrences="+std::to_string(next->catalog.label_fallbacks)+".").c_str());
     }
+    if(next->scanned){refresh_trailer=false;UpdateTrailerCargos(*next,economy);}
     Publish(std::move(next));
 }
 std::shared_ptr<const View> Snapshot() { std::lock_guard<std::mutex> lock(mutex); return view; }
@@ -124,7 +149,8 @@ void EnableCreation(const GameProfile& core,const CreationCode& code,creation::B
 }
 bool QueueCreation(const JobRequest& request){
     std::lock_guard<std::mutex> lock(mutex);
-    return view->creation_supported && view->scanned && request.session==view->session && ValidSelection(view->catalog,request) && creation_queue.Push(request);
+    return view->creation_supported && view->scanned && request.session==view->session && ValidSelection(view->catalog,request) &&
+        (request.market!=Market::OwnedTrailer || view->trailer_cargos.Allows(request.origin,request.cargo)) && creation_queue.Push(request);
 }
 void CancelCreation(){std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();}
 CreateResult ExecuteCreation(std::uintptr_t economy){

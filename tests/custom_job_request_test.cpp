@@ -1,5 +1,6 @@
 #include "custom_job_request.h"
 #include "custom_job_events.h"
+#include "custom_trailer_cargos.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -33,6 +34,21 @@ int main(){
     wrong=request;wrong.destination=wrong.origin;Check(!ValidSelection(catalog,wrong));
     wrong=request;wrong.cargo="Salt";Check(!ValidSelection(catalog,wrong));
     request.market=Market::OwnedTrailer;Check(ValidSelection(catalog,request));
+    TrailerCargos trailer;
+    Check(AvailableCargos(&catalog.companies[0],false,trailer).size()==1);
+    Check(AvailableCargos(&catalog.companies[0],true,trailer).empty());
+    trailer.status=TrailerCargoStatus::Ready;
+    trailer.companies[request.origin]={"cargo.salt","cargo.mod_tank"};
+    Check(AvailableCargos(&catalog.companies[0],true,trailer)==std::vector<std::string>{"cargo.salt"});
+    Check(AvailableCargos(&catalog.companies[1],true,trailer).empty());
+    trailer.companies[request.origin]={"cargo.mod_tank"}; // A changed trailer invalidates the old selection.
+    Check(!trailer.Allows(request.origin,request.cargo));
+    Check(AvailableCargos(&catalog.companies[0],true,trailer).empty());
+    trailer.status=TrailerCargoStatus::NoTrailer;
+    Check(AvailableCargos(&catalog.companies[0],true,trailer).empty());
+    Check(AvailableCargos(&catalog.companies[0],false,trailer).size()==1);
+    trailer.status=TrailerCargoStatus::Failed;Check(!trailer.Allows(request.origin,"cargo.mod_tank"));
+    Check(AvailableCargos(nullptr,true,trailer).empty());
     RequestQueue queue;Check(queue.Push(request));Check(!queue.Push(wrong));
     Check(queue.Take()->destination==request.destination);Check(!queue.Take());
     Check(queue.Push(request));queue.Clear();Check(!queue.Take());

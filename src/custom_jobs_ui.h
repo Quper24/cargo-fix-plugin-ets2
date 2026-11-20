@@ -53,7 +53,16 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         tr("Display names unavailable; identifiers shown.", "Названия пока недоступны; показаны идентификаторы."));
     if(catalog.label_fallbacks)ImGui::TextDisabled("%s",tr("Some missing names use identifiers.","Для части ненайденных названий показаны идентификаторы."));
     ImGui::RadioButton(tr("Freight market", "Грузоперевозки"), &market, 0); ImGui::SameLine();
-    ImGui::RadioButton(tr("Owned trailer", "Собственный прицеп"), &market, 1);
+    if(ImGui::RadioButton(tr("Owned trailer", "Собственный прицеп"), &market, 1))RefreshTrailerCargos();
+    if(market==1){
+        const auto status=state->trailer_cargos.status;
+        if(status==TrailerCargoStatus::Ready)
+            ImGui::TextDisabled("%s",tr("Only cargo compatible with your selected trailer is shown.","Показаны только грузы для выбранного собственного прицепа."));
+        else if(status==TrailerCargoStatus::NoTrailer)
+            ImGui::TextWrapped("%s",tr("Select an owned trailer in the game to see its cargo.","Выберите собственный прицеп в игре, чтобы увидеть подходящие грузы."));
+        else
+            ImGui::TextWrapped("%s",tr("Trailer cargo list unavailable. Read the loaded session again.","Не удалось получить грузы для прицепа. Считайте загруженную сессию заново."));
+    }
     ImGui::SetNextItemWidth(320 * scale);
     ImGui::InputText(tr("Filter names", "Поиск по названиям"), search.data(), search.size());
     auto visible = [&](const std::string& value) { return ContainsName(value,search.data()); };
@@ -114,14 +123,15 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         cargo_id.clear(); destination_city.clear(); destination_id.clear();
     }
     origin = find_company(origin_id);
-    if (origin && std::find(origin->outgoing.begin(), origin->outgoing.end(), cargo_id) == origin->outgoing.end()) {
-        cargo_id.clear(); destination_id.clear();
+    const auto available=AvailableCargos(origin,market==1,state->trailer_cargos);
+    if (!cargo_id.empty() && std::find(available.begin(), available.end(), cargo_id) == available.end()) {
+        cargo_id.clear(); destination_city.clear();destination_id.clear();
     }
     ImGui::SetNextItemWidth(310 * scale);
     if (ImGui::BeginCombo(tr("Cargo", "Груз"), cargo_id.empty() ? tr("Select...", "Выберите...") : cargo_label(cargo_id).c_str())) {
-        std::vector<std::string> available=origin?origin->outgoing:std::vector<std::string>{};
-        std::sort(available.begin(),available.end(),[&](const auto& a,const auto& b){return cargo_label(a)==cargo_label(b)?a<b:cargo_label(a)<cargo_label(b);});
-        for (const auto& cargo : available) if (visible(cargo_label(cargo))) {
+        auto sorted=available;
+        std::sort(sorted.begin(),sorted.end(),[&](const auto& a,const auto& b){return cargo_label(a)==cargo_label(b)?a<b:cargo_label(a)<cargo_label(b);});
+        for (const auto& cargo : sorted) if (visible(cargo_label(cargo))) {
             ImGui::PushID(cargo.c_str());
             if(ImGui::Selectable(cargo_label(cargo).c_str(),cargo_id==cargo)) {
                 cargo_id=cargo;destination_city.clear();destination_id.clear();
@@ -145,6 +155,8 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         else request_error=tr("Request not queued. Read the session and try again.","Запрос не поставлен в очередь. Считайте сессию и повторите действие.");
     }
     ImGui::EndDisabled();
+    if(market==1 && origin && available.empty() && state->trailer_cargos.status==TrailerCargoStatus::Ready)
+        ImGui::TextWrapped("%s",tr("This company has no cargo compatible with your trailer.","На этой базе нет грузов для вашего прицепа."));
     if(!request_error.empty())ImGui::TextWrapped("%s",request_error.c_str());
     if(state->has_creation_result)ImGui::TextWrapped("%s",CreationMessage(state->creation_result,russian).c_str());
 }

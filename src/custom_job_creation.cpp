@@ -5,6 +5,7 @@
 #include <Windows.h>
 #include <atomic>
 #include <cstring>
+#include <set>
 
 namespace custom_jobs::creation {
 namespace {
@@ -277,6 +278,46 @@ void Shutdown(){
     for(auto* target:hooks)MH_RemoveHook(target);
     hooks.clear();original_owned=nullptr;original_base=nullptr;original_destinations=nullptr;original_schedule=nullptr;original_physical=nullptr;
     module=0;core={};code={};backend={};logger=nullptr;
+}
+std::uintptr_t TrailerIdentity(std::uintptr_t economy){return initialized?TrailerData(economy):0;}
+TrailerCargos ReadTrailerCargos(std::uintptr_t economy,std::uintptr_t pools,const Catalog& catalog){
+    TrailerCargos result;
+    if(!initialized)return result;
+    const auto trailer=TrailerData(economy);
+    if(!trailer){result.status=TrailerCargoStatus::NoTrailer;return result;}
+    result.status=TrailerCargoStatus::Failed;
+    std::uintptr_t context=0;
+    std::vector<std::uintptr_t> companies;
+    if(!Get(economy+0x7b8,context)||!ReadableMemory(context,0x20)||!PointerList(Memory,economy,0x28,1000000,companies))return result;
+    std::set<std::string> known;
+    for(const auto& company:catalog.companies)known.insert(company.id);
+    // The native predicate depends on company definition, skills and trailer.
+    // Share its result between depots using the same loaded definition.
+    std::map<std::uintptr_t,std::vector<std::string>> cache;
+    std::vector<std::string> parts;
+    for(const auto company:companies){
+        if(!UnitName(Memory,pools,company,parts))continue;
+        const auto id=Join(parts);if(!known.count(id))continue;
+        std::uintptr_t definition=0;std::uint64_t count=0;
+        if(!Get(company+0x68,definition)||!LiveUnit(Memory,definition)||!Get(definition+0xa8,count)||count>100000)return result;
+        auto found=cache.find(definition);
+        if(found==cache.end()){
+            Scratch candidates(0,static_cast<std::size_t>(count));
+            // Capacity covers the entire outgoing list; native append never
+            // reserves or owns this borrowed-pointer scratch storage.
+            original_owned(company,&candidates.values,context,trailer);
+            if(!ValidOfferVector(candidates.values))return result;
+            std::vector<std::string> cargos;
+            for(std::uint64_t n=0;n<candidates.values.count;++n){
+                if(!UnitName(Memory,pools,candidates.values.data[n],parts))return result;
+                cargos.push_back(Join(parts));
+            }
+            found=cache.emplace(definition,std::move(cargos)).first;
+        }
+        result.companies.emplace(id,found->second);
+    }
+    result.status=TrailerCargoStatus::Ready;
+    return result;
 }
 CreateResult Execute(std::uintptr_t economy,std::uintptr_t pools,const JobRequest& request){
     auto result=[&](CreateStatus status){return CreateResult{status,request.market};};

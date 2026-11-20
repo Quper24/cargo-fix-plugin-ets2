@@ -84,6 +84,9 @@ void CloseMenu() {
     if(context) { ContextScope scope;ImGui::GetIO().ClearInputMouse(); }
 }
 void OpenMenu() {
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    custom_jobs::RefreshTrailerCargos();
+#endif
     menu=true; capture=0; error.clear(); draft_cargo=cargo; draft_freight=freight;
     RECT bounds{};GetClientRect(game,&bounds);pointer.Begin(float(bounds.right),float(bounds.bottom));mouse_source=MouseSource::None;
     ImGui::GetIO().ClearInputMouse();
