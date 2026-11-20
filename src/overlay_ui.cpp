@@ -7,6 +7,9 @@
 #include "menu_pointer.h"
 #include "brand_palette.h"
 #include "plugin_version.h"
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#include "custom_jobs_ui.h"
+#endif
 #include <Windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -181,7 +184,7 @@ void Poll(bool focused) {
     menu_was_down=m;cargo_down=a;freight_down=b;
     for(unsigned k=0;k<256;++k)keys[k]=Down(k);
 }
-void DrawMenu() {
+void DrawMenu(int preview_page = -1) {
     auto& io=ImGui::GetIO();const float scale=std::min(1.f,std::min((io.DisplaySize.x-24)/900,(io.DisplaySize.y-24)/660));
     if(scale<=0)return;
     ImGui::SetNextWindowSize({900*scale,660*scale});
@@ -202,6 +205,29 @@ void DrawMenu() {
     text(32,108,17,muted,Tr("Your cargo market. Your rules.","Ваш рынок грузов. Ваши правила."));
     if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),pos(710,23),pos(842,120));
     if(button("X##top",850,18,30,30))CloseMenu();
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    static int page = 0;
+    const int visible_page = preview_page >= 0 ? preview_page : page;
+    if(button(Tr("Markets", "Рынки"),32,128,150,26,visible_page==0))page=0;
+    if(button(Tr("Create job", "Создать заказ"),194,128,190,26,visible_page==1))page=1;
+    if((preview_page >= 0 ? preview_page : page)==1) {
+        ImGui::SetWindowFontScale(1.f); // Child font scaling must not multiply the header button scale.
+        ImGui::SetCursorScreenPos(pos(32,170));
+        ImGui::BeginChild("session-catalog",{836*scale,414*scale});
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.08f,.08f,.08f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,ImVec4(.15f,.15f,.15f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,ImVec4(.2f,.2f,.2f,1));
+        ImGui::PushStyleColor(ImGuiCol_CheckMark,accent);
+        ImGui::PushStyleColor(ImGuiCol_Header,ImVec4(.2f,.3f,.18f,1));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,ImVec4(.25f,.35f,.22f,1));
+        custom_jobs::DrawCatalog(scale,notifications::Russian(),[]{Request(3);CloseMenu();});
+        ImGui::PopStyleColor(6);
+        ImGui::EndChild();
+        text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT " dev");
+        if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
+        ImGui::End();ImGui::PopStyleVar();return;
+    }
+#endif
     card(28,156,410,204);card(462,156,410,204);
     text(48,176,23,white,Tr("Owned-trailer cargo","Грузы для прицепа"));
     text(48,220,16,muted,Tr("Replace current owned-trailer offers.\nUp to 5 new offers per company.","Заменить текущие грузы для прицепа.\nДо 5 новых предложений на компанию."));
@@ -315,7 +341,7 @@ HRESULT STDMETHODCALLTYPE PresentBridge(IDXGISwapChain* chain,UINT sync,UINT fla
     --callbacks;return result;
 }
 }
-void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu) {
+void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int preview_page) {
     std::lock_guard<std::recursive_mutex> guard(mutex);
     if(stopping || !chain)return;
     DXGI_SWAP_CHAIN_DESC desc{};if(FAILED(chain->GetDesc(&desc)))return;
@@ -338,7 +364,7 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu) {
     ImGui::NewFrame();
     const bool visible_notice=focused&&!menu&&!preview_menu&&!notice.empty();
     const bool alive=lifetime.Tick(GetTickCount64(),visible_notice);
-    if((menu || preview_menu)&&focused)DrawMenu();else if(alive&&visible_notice)DrawNotice();
+    if((menu || preview_menu)&&focused)DrawMenu(allow_hidden&&preview_menu?preview_page:-1);else if(alive&&visible_notice)DrawNotice();
     ImGui::Render();
     if(ImGui::GetDrawData()->TotalVtxCount==0)return;
     ComPtr<ID3D11Texture2D> backbuffer;ComPtr<ID3D11RenderTargetView> target;
@@ -390,7 +416,12 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
     return ok;
 }
 void Notify(const std::wstring& text) { std::lock_guard<std::recursive_mutex> guard(mutex);notice=Utf8(text);lifetime.Start(); }
-void Request(int action) { if(action==1 || action==2) requested=action; }
+void Request(int action) {
+    if(action==1 || action==2) requested=action;
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    else if(action==3) requested=action;
+#endif
+}
 int Tick() { return requested.exchange(0); }
 void CancelPending() { requested=0; }
 Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr}; }

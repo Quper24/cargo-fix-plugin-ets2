@@ -6,7 +6,7 @@ struct IDXGISwapChain;
 namespace overlay_ui {
 using Logger = void(*)(const char*);
 bool Initialize(const std::filesystem::path& directory, Logger logger, bool install_present_hook = true);
-void RenderFrame(IDXGISwapChain* chain, bool allow_hidden = false, bool preview_menu = false);
+void RenderFrame(IDXGISwapChain* chain, bool allow_hidden = false, bool preview_menu = false, int preview_page = -1);
 void Notify(const std::wstring& text);
 void Request(int action);
 int Tick();

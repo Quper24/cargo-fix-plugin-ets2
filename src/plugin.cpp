@@ -21,6 +21,9 @@
 #include "game_resolver.h"
 #include "owned_offers.h"
 #include "plugin_version.h"
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#include "custom_jobs.h"
+#endif
 
 #include "scssdk_telemetry.h"
 #include "scssdk_telemetry_event.h"
@@ -289,6 +292,9 @@ bool InitializeProfile()
         return false;
     }
     freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    custom_jobs::Initialize(g_module_base, *g_profile, exe, Log);
+#endif
     Log((std::string(g_profile->name) + " profile active. Cargo Control v" CARGO_CONTROL_VERSION_TEXT
          ". Control menu Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());
     return true;
@@ -296,6 +302,9 @@ bool InitializeProfile()
 
 void ResetSession()
 {
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    custom_jobs::Reset();
+#endif
     g_limit.Reset();
     g_auto_expiry = 0;
     freight::Reset();
@@ -438,6 +447,9 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     g_last_economy = economy;
     notifications::Tick();
     const bool ready = g_readiness.Observe(snapshot, valid, restarted);
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    custom_jobs::Observe(economy, ready);
+#endif
     // Consume every request even in menus: never defer it until a future drive/save.
     const int action = overlay_ui::Tick();
     if (action && !ready) {
@@ -447,6 +459,9 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
         Log("Manual request rejected: profile/economy is not ready.");
     } else if (action == 1) RefreshOwnedCargo(economy);
     else if (action == 2 && g_enabled) freight::Request(economy);
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    else if (action == 3 && g_enabled) custom_jobs::Scan(economy);
+#endif
 
 }
 void OnPaused(const scs_event_t, const void*, const scs_context_t) { g_driving = false; }
@@ -474,6 +489,9 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 
 SCSAPI_VOID scs_telemetry_shutdown(void)
 {
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    custom_jobs::Shutdown();
+#endif
     RemoveAutomaticCargoHook();
     overlay_ui::Shutdown();
     freight::Shutdown();

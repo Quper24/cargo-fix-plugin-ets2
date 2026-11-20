@@ -2,6 +2,9 @@
 #include "branding.h"
 #include "brand_palette.h"
 #include "menu_pointer.h"
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#include "custom_jobs.h"
+#endif
 #include <Windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -64,6 +67,17 @@ int wmain(int argc,wchar_t** argv) {
     SetWindowPos(window,nullptr,0,0,1024,768,SWP_NOACTIVATE|SWP_NOZORDER);
     for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,true);
     Capture(dev.Get(),gpu.Get(),chain.Get(),nullptr,true); // Exact same palette on an sRGB backbuffer.
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    custom_jobs::Catalog fixture;
+    fixture.cargos.push_back({"cargo.mod_cargo9","mod_cargo9"});
+    fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","mod_depot",{"cargo.mod_cargo9"},{}});
+    fixture.companies.push_back({"company.volatile.other_base.other_city","other_city","other_base",{}, {"cargo.mod_cargo9"}});
+    custom_jobs::PreviewCatalog(std::move(fixture));
+    for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,true,1);
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>3?argv[3]:nullptr);
+    overlay_ui::Request(3);Check(overlay_ui::Tick()==3 && overlay_ui::Tick()==0);
+    custom_jobs::Reset();Check(!custom_jobs::Snapshot()->scanned);
+#endif
     overlay_ui::Shutdown();Check(GetWindowLongPtrW(window,GWLP_WNDPROC)==original_proc);
     Check(overlay_ui::Initialize(std::filesystem::temp_directory_path(),Log,true));
     chain->Present(0,DXGI_PRESENT_TEST);Check(overlay_ui::Inspect().present_calls>0);
