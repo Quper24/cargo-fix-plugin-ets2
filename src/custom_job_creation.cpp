@@ -34,6 +34,7 @@ struct Selection {
     std::uintptr_t origin=0,destination=0,cargo=0,definition=0;
     std::uint32_t slot=0;
     bool physical=false,scheduled=false;
+    DirectRouteRow direct_route;
 };
 thread_local Selection* selected=nullptr;
 struct SelectionScope {Selection* previous;explicit SelectionScope(Selection& value):previous(selected){selected=&value;}~SelectionScope(){selected=previous;}};
@@ -60,11 +61,22 @@ void FilterCargo(Vector* values){
     if(!values || !ValidOfferVector(*values)){if(values)values->count=0;return;}
     values->count=KeepCandidate(values->data,values->count,selected->cargo);
 }
+bool SetBorrowedCandidate(Vector* values,std::uintptr_t candidate){
+    if(!values || !candidate || !Writable(reinterpret_cast<std::uintptr_t>(values),sizeof(Vector)) || !ValidOfferVector(*values))return false;
+    values->count=0;
+    if(!values->capacity){
+        using Reserve=bool(__fastcall*)(Vector*,std::uint64_t);
+        std::uintptr_t reserve=0;
+        if(!Get(values->vtable+24,reserve)||!ReadableMemory(reserve,1)||!reinterpret_cast<Reserve>(reserve)(values,1))return false;
+    }
+    if(!ValidOfferVector(*values)||!values->capacity||!Writable(reinterpret_cast<std::uintptr_t>(values->data),8))return false;
+    values->data[0]=candidate;values->count=1;return true;
+}
 std::uint64_t __fastcall OwnedBridge(std::uintptr_t company,Vector* values,std::uintptr_t context,std::uintptr_t trailer){
     Callback guard;
     if(selected && selected->market==Market::OwnedTrailer && selected->origin==company){
-        OwnedCargoProbe probe(&selected->cargo,1);
-        return original_owned(probe.Address(),values,context,trailer);
+        if(!CargoFitsTrailer(Memory,selected->cargo,trailer)){if(values)values->count=0;return 0;}
+        return !values || SetBorrowedCandidate(values,selected->cargo)?1:0;
     }
     return original_owned(company,values,context,trailer);
 }
@@ -78,7 +90,11 @@ std::uint64_t FilterDestinations(Vector* values,std::uint64_t cutoff,std::uintpt
 }
 std::uint64_t __fastcall DestinationBridge(std::uintptr_t company,Vector* values,std::uintptr_t unused,std::uintptr_t context,
                                           std::uintptr_t cargo,const std::uint64_t* filter,float limit,std::uintptr_t trailer){
-    Callback guard;const auto result=original_destinations(company,values,unused,context,cargo,filter,limit,trailer);
+    Callback guard;
+    if(selected && selected->market==Market::OwnedTrailer && selected->origin==company && selected->cargo==cargo){
+        return SetBorrowedCandidate(values,reinterpret_cast<std::uintptr_t>(&selected->direct_route))?UINT64_MAX:0;
+    }
+    const auto result=original_destinations(company,values,unused,context,cargo,filter,limit,trailer);
     if(selected && selected->origin==company && selected->cargo==cargo)return FilterDestinations(values,result,selected->destination);
     return result;
 }
@@ -180,7 +196,7 @@ bool LiveSelection(std::uintptr_t economy,std::uintptr_t pools,const JobRequest&
     if(!result.origin || (!request.destination.empty() && (!result.destination || result.origin==result.destination)) ||
        !Get(result.origin+0x68,context)||!LiveUnit(Memory,context)||
        !Get(result.origin+0x10,result.definition)||!result.definition || !PointerList(Memory,context,0xa0,100000,cargos))return false;
-    if(!request.destination.empty() && (!Get(result.destination+0x68,destination_context)||!LiveUnit(Memory,destination_context)||
+    if(!request.destination.empty() && request.market==Market::Freight && (!Get(result.destination+0x68,destination_context)||!LiveUnit(Memory,destination_context)||
        !PointerList(Memory,destination_context,0xc8,100000,accepts)))return false;
     if(request.market==Market::OwnedTrailer){
         std::map<std::string,std::uintptr_t> loaded;
@@ -190,7 +206,7 @@ bool LiveSelection(std::uintptr_t economy,std::uintptr_t pools,const JobRequest&
     std::uint64_t prefix=0;
     if(!result.cargo)return false;
     if(!request.destination.empty()){
-        if(std::find(accepts.begin(),accepts.end(),result.cargo)==accepts.end() ||
+        if((request.market==Market::Freight && std::find(accepts.begin(),accepts.end(),result.cargo)==accepts.end()) ||
            !Get(module+code.destination_prefix,prefix) || prefix>=request.destination.size())return false;
         target=request.destination.substr(static_cast<std::size_t>(prefix));
     }
@@ -316,57 +332,16 @@ TrailerCargos ReadTrailerCargos(std::uintptr_t economy,std::uintptr_t pools,cons
     const auto trailer=TrailerData(economy);
     if(!trailer){result.status=TrailerCargoStatus::NoTrailer;return result;}
     result.status=TrailerCargoStatus::Failed;
-    std::uintptr_t context=0;
-    if(!Get(economy+0x7b8,context)||!ReadableMemory(context,0x20))return result;
     std::map<std::string,std::uintptr_t> loaded;
     if(!LoadedCargos(economy,pools,loaded))return result;
-    std::vector<std::uintptr_t> pointers;
     std::map<std::uintptr_t,std::string> ids;
     for(const auto& cargo:catalog.cargos){
         const auto found=loaded.find(cargo.id);
-        if(found!=loaded.end()){pointers.push_back(found->second);ids.emplace(found->second,cargo.id);}
+        if(found!=loaded.end())ids.emplace(found->second,cargo.id);
     }
-    OwnedCargoProbe probe(pointers.data(),pointers.size());
-    Scratch candidates(0,pointers.size());
-    original_owned(probe.Address(),&candidates.values,context,trailer);
-    if(!ValidOfferVector(candidates.values))return result;
-    for(std::uint64_t n=0;n<candidates.values.count;++n){
-        const auto found=ids.find(candidates.values.data[n]);
-        if(found==ids.end())return result;
-        result.cargos.push_back(found->second);
-    }
+    for(const auto& cargo:loaded)if(ids.count(cargo.second) && CargoFitsTrailer(Memory,cargo.second,trailer))result.cargos.push_back(cargo.first);
     result.status=TrailerCargoStatus::Ready;
     return result;
-}
-DestinationOptions ReadDestinations(std::uintptr_t economy,std::uintptr_t pools,const DestinationQuery& query){
-    DestinationOptions result;result.query=query;result.checked=true;
-    if(!initialized){result.status=CreateStatus::Unsupported;return result;}
-    Selection selection;std::string unused;
-    JobRequest request{query.session,query.market,query.origin,query.cargo,{ },false};
-    if(!LiveSelection(economy,pools,request,selection,unused)){result.status=CreateStatus::InvalidSelection;return result;}
-    std::uintptr_t context=0,routes=0,trailer=0;std::uint64_t count=0;
-    if(query.market==Market::OwnedTrailer){trailer=TrailerData(economy);if(!trailer){result.status=CreateStatus::TrailerRequired;return result;}}
-    if(!Get(economy+0x7b8,context)||!ReadableMemory(context,0x20)||!Get(selection.origin+0x20,routes)||
-       !Get(selection.origin+0x28,count)||count>1000000||(count&&!ReadableMemory(routes,count*16))){result.status=CreateStatus::InvalidGameData;return result;}
-    Scratch rows(0,static_cast<std::size_t>(count));
-    const auto cutoff=original_destinations(selection.origin,&rows.values,0,context,selection.cargo,nullptr,0.f,trailer);
-    if(!ValidOfferVector(rows.values)){result.status=CreateStatus::InvalidGameData;return result;}
-    std::vector<std::string> parts;
-    for(std::uint64_t n=0;n<rows.values.count && (cutoff==UINT64_MAX || n<cutoff);++n){
-        std::uintptr_t receiver=0;
-        if(Get(rows.values.data[n],receiver)&&receiver!=selection.origin&&UnitName(Memory,pools,receiver,parts))result.companies.push_back(Join(parts));
-    }
-    if(logger){
-        const auto with_trailer=rows.values.count;
-        rows.values.count=0;
-        original_destinations(selection.origin,&rows.values,0,context,selection.cargo,nullptr,0.f,0);
-        std::string countries;std::uintptr_t tokens=0;std::uint64_t token_count=0;
-        if(trailer && Get(trailer+0x60,tokens)&&Get(trailer+0x68,token_count)&&token_count<=1000)
-            for(std::uint64_t n=0;n<token_count;++n){std::uint64_t token=0;if(Get(tokens+n*8,token)){if(!countries.empty())countries+=",";countries+=DecodeToken(token);}}
-        logger(("Destination options: source="+query.origin+", cargo="+query.cargo+", route_rows="+std::to_string(count)+
-            ", with_trailer="+std::to_string(with_trailer)+", without_trailer="+std::to_string(rows.values.count)+", trailer_countries="+countries+".").c_str());
-    }
-    result.status=CreateStatus::Created;return result;
 }
 CreateResult Execute(std::uintptr_t economy,std::uintptr_t pools,const JobRequest& request){
     auto result=[&](CreateStatus status){return CreateResult{status,request.market};};
@@ -383,24 +358,22 @@ CreateResult Execute(std::uintptr_t economy,std::uintptr_t pools,const JobReques
     if(!Get(economy+0x7b8,context)||!ReadableMemory(context,0x20))return result(CreateStatus::InvalidGameData);
     const auto* offer_vector=reinterpret_cast<const Vector*>(selection.origin+0xa0);
     if(!ReadableMemory(reinterpret_cast<std::uintptr_t>(offer_vector),sizeof(Vector))||!ValidOfferVector(*offer_vector))return result(CreateStatus::InvalidGameData);
-    std::uintptr_t trailer=0;
     if(request.market==Market::OwnedTrailer){
-        trailer=TrailerData(economy);if(!trailer)return result(CreateStatus::TrailerRequired);
-        Scratch cargo_candidates(offer_vector->vtable,1);
-        OwnedCargoProbe probe(&selection.cargo,1);
-        original_owned(probe.Address(),&cargo_candidates.values,context,trailer);
-        if(!ValidOfferVector(cargo_candidates.values)||!KeepCandidate(cargo_candidates.values.data,cargo_candidates.values.count,selection.cargo))return result(CreateStatus::CargoUnavailable);
-    }
-    std::uintptr_t routes=0;std::uint64_t route_count=0;
-    if(!Get(selection.origin+0x20,routes)||!Get(selection.origin+0x28,route_count)||route_count>1000000 ||
-        (route_count && !ReadableMemory(routes,route_count*16)))return result(CreateStatus::InvalidGameData);
-    Scratch destinations(offer_vector->vtable,static_cast<std::size_t>(route_count));
-    const auto cutoff=original_destinations(selection.origin,&destinations.values,0,context,selection.cargo,nullptr,0.f,trailer);
-    const auto candidate_count=destinations.values.count;
-    if(FilterDestinations(&destinations.values,cutoff,selection.destination)!=UINT64_MAX){
-        if(logger)logger(("Destination preflight rejected: route_rows="+std::to_string(route_count)+", eligible="+std::to_string(candidate_count)+
-            ", cutoff="+std::to_string(cutoff)+", market="+std::to_string(static_cast<int>(request.market))+".").c_str());
-        return result(CreateStatus::DestinationUnavailable);
+        const auto trailer=TrailerData(economy);if(!trailer)return result(CreateStatus::TrailerRequired);
+        if(!CargoFitsTrailer(Memory,selection.cargo,trailer))return result(CreateStatus::CargoUnavailable);
+        if(!ReadDirectRoute(Memory,selection.origin,selection.destination,selection.direct_route)){
+            if(logger)logger(("Direct owned job has no distance row: source="+request.origin+", destination="+request.destination+".").c_str());
+            return result(CreateStatus::RouteDataUnavailable);
+        }
+        if(logger)logger(("Direct owned job: cached_distance="+std::to_string(selection.direct_route.distance)+
+            ", ferry="+std::to_string(selection.direct_route.ferry)+"; random-market country/skill/cargo-list filters are not applied.").c_str());
+    }else{
+        std::uintptr_t routes=0;std::uint64_t route_count=0;
+        if(!Get(selection.origin+0x20,routes)||!Get(selection.origin+0x28,route_count)||route_count>1000000 ||
+            (route_count && !ReadableMemory(routes,route_count*16)))return result(CreateStatus::InvalidGameData);
+        Scratch destinations(offer_vector->vtable,static_cast<std::size_t>(route_count));
+        const auto cutoff=original_destinations(selection.origin,&destinations.values,0,context,selection.cargo,nullptr,0.f,0);
+        if(FilterDestinations(&destinations.values,cutoff,selection.destination)!=UINT64_MAX)return result(CreateStatus::DestinationUnavailable);
     }
     const auto status=request.market==Market::OwnedTrailer?Owned(economy,selection,target,now,deadline):Freight(economy,selection,target,now,deadline,request.allow_replace);
     if(logger){const auto message="Targeted creation result="+std::to_string(static_cast<int>(status))+", origin="+request.origin+", cargo="+request.cargo+", destination="+request.destination+", market="+std::to_string(static_cast<int>(request.market))+".";logger(message.c_str());}

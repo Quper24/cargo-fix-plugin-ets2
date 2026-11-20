@@ -19,7 +19,6 @@ Availability availability = Availability::UnsupportedCode;
 CatalogNameCode name_code{};
 bool creation_supported=false;
 RequestQueue creation_queue;
-std::optional<DestinationQuery> destination_queue;
 std::uintptr_t last_trailer=UINTPTR_MAX;
 std::atomic<bool> refresh_trailer{false};
 bool Memory(std::uintptr_t address, void* bytes, std::size_t length) {
@@ -30,7 +29,6 @@ void Publish(std::shared_ptr<View> next) {
     std::lock_guard<std::mutex> lock(mutex); view = std::move(next);
 }
 void UpdateTrailerCargos(View& next,std::uintptr_t economy){
-    next.destinations={};
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     const auto started=GetTickCount64();
     next.trailer_cargos=creation::ReadTrailerCargos(economy,pools,next.catalog);
@@ -68,7 +66,7 @@ void Reset() {
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
     next->creation_supported = creation_supported;
-    std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();destination_queue.reset();view=std::move(next);
+    std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();view=std::move(next);
 }
 void Observe(std::uintptr_t economy, bool ready) {
     if (was_ready && (!ready || economy != last_economy)) Reset();
@@ -79,23 +77,11 @@ void Observe(std::uintptr_t economy, bool ready) {
         if(current->scanned && (refresh_trailer.exchange(false) || creation::TrailerIdentity(economy)!=last_trailer)){
             auto next=std::make_shared<View>(*current);UpdateTrailerCargos(*next,economy);Publish(std::move(next));
         }
-        std::optional<DestinationQuery> query;
-        {std::lock_guard<std::mutex> lock(mutex);query=std::move(destination_queue);destination_queue.reset();}
-        const auto latest=Snapshot();
-        if(query && latest->scanned && query->session==latest->session && latest->trailer_cargos.Allows(query->cargo)){
-            auto next=std::make_shared<View>(*latest);next->destinations=creation::ReadDestinations(economy,pools,*query);Publish(std::move(next));
-        }
+
     }
 #endif
 }
 void RefreshTrailerCargos(){refresh_trailer=true;}
-void QueueDestinations(const DestinationQuery& query){
-    std::lock_guard<std::mutex> lock(mutex);
-    if(!view->scanned || query.session!=view->session || query.market!=Market::OwnedTrailer ||
-       !view->trailer_cargos.Allows(query.cargo) || view->destinations.Matches(query) || (destination_queue && *destination_queue==query))return;
-    if(std::none_of(view->catalog.companies.begin(),view->catalog.companies.end(),[&](const auto& company){return company.id==query.origin;}))return;
-    destination_queue=query;
-}
 void Scan(std::uintptr_t economy) {
     if (last_economy && last_economy != economy) Reset();
     last_economy = economy;
@@ -165,8 +151,7 @@ void EnableCreation(const GameProfile& core,const CreationCode& code,creation::B
 bool QueueCreation(const JobRequest& request){
     std::lock_guard<std::mutex> lock(mutex);
     return view->creation_supported && view->scanned && request.session==view->session && ValidSelection(view->catalog,request) &&
-        (request.market!=Market::OwnedTrailer || (view->trailer_cargos.Allows(request.cargo) &&
-            view->destinations.Matches({request.session,request.market,request.origin,request.cargo}) && view->destinations.Allows(request.destination))) && creation_queue.Push(request);
+        (request.market!=Market::OwnedTrailer || view->trailer_cargos.Allows(request.cargo)) && creation_queue.Push(request);
 }
 void CancelCreation(){std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();}
 CreateResult ExecuteCreation(std::uintptr_t economy){
@@ -198,6 +183,7 @@ std::string CreationMessage(CreateResult result,bool ru){
     case CreateStatus::InvalidSelection:return tr("The selected source, cargo or destination is no longer available. Read the session again.","Выбранная база, груз или получатель больше недоступны. Заново считайте сессию.");
     case CreateStatus::TrailerRequired:return tr("Select an owned trailer before creating its cargo offer.","Перед созданием груза выберите свой прицеп.");
     case CreateStatus::CargoUnavailable:return tr("This cargo is not compatible with the selected owned trailer or its limits.","Этот груз не подходит выбранному собственному прицепу или его ограничениям.");
+    case CreateStatus::RouteDataUnavailable:return tr("Could not read road distance data for these companies. See game.log.txt.","Не удалось прочитать данные расстояния между этими базами. Подробности в game.log.txt.");
     case CreateStatus::DestinationUnavailable:return tr("The game rejected this destination for the cargo, route or trailer.","Игра не допускает этого получателя для выбранного груза, маршрута или прицепа.");
     case CreateStatus::NoSlot:return tr("This company has no available native job slots. Open its market or choose another company.","У этой базы нет доступных штатных слотов заказов. Откройте её рынок или выберите другую базу.");
     case CreateStatus::ReplaceRequired:return tr("Enable replacement of one offer at the source company, then try again.","Разрешите замену одного предложения на базе отправления и повторите действие.");

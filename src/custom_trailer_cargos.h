@@ -1,7 +1,6 @@
 #pragma once
 #include "custom_job_catalog.h"
-#include <array>
-#include <cstddef>
+#include <cmath>
 
 namespace custom_jobs {
 enum class TrailerCargoStatus { Unsupported, NoTrailer, Ready, Failed };
@@ -18,28 +17,20 @@ inline std::vector<std::string> AvailableCargos(const Catalog& catalog,const Com
     else if(company)result=company->outgoing;
     return result;
 }
-// Read-only inputs for the fully validated native owned-candidate routine.
-// That routine reads only company+68, definition+8 and definition+A0/A8.
-// No live company definition or cargo relationship is changed.
-struct OwnedCargoProbe {
-    struct Definition {
-        std::array<unsigned char,8> reserved{};
-        std::uint32_t flags=0x80000000u;
-        std::array<unsigned char,0xa0-12> padding{};
-        const std::uintptr_t* data=nullptr;
-        std::uint64_t count=0;
-    } definition;
-    struct CompanyView {
-        std::array<unsigned char,0x68> reserved{};
-        const Definition* definition=nullptr;
-    } company;
-    OwnedCargoProbe(const std::uintptr_t* data,std::uint64_t count){definition.data=data;definition.count=count;company.definition=&definition;}
-    OwnedCargoProbe(const OwnedCargoProbe&)=delete;
-    OwnedCargoProbe& operator=(const OwnedCargoProbe&)=delete;
-    std::uintptr_t Address() const{return reinterpret_cast<std::uintptr_t>(&company);}
-};
-static_assert(offsetof(OwnedCargoProbe::Definition,flags)==8);
-static_assert(offsetof(OwnedCargoProbe::Definition,data)==0xa0);
-static_assert(offsetof(OwnedCargoProbe::Definition,count)==0xa8);
-static_assert(offsetof(OwnedCargoProbe::CompanyView,definition)==0x68);
+// Same physical body/load checks as the validated native candidate routine.
+// Random-market probability, skills and trailer country lists are not inputs.
+inline bool CargoFitsTrailer(const Reader& read,std::uintptr_t cargo,std::uintptr_t trailer){
+    if(!cargo || cargo>UINTPTR_MAX-0xb8 || !trailer || trailer>UINTPTR_MAX-0x50)return false;
+    std::uintptr_t types=0;std::uint64_t count=0,body=0;
+    if(!Read(read,cargo+0xa8,types)||!Read(read,cargo+0xb0,count)||!count||count>10000||
+       !types||types>UINTPTR_MAX-count*8||!Read(read,trailer+0x48,body))return false;
+    bool matches=false;
+    for(std::uint64_t n=0;n<count;++n){std::uint64_t type=0;if(!Read(read,types+n*8,type))return false;if(type==body)matches=true;}
+    if(!matches)return false;
+    float volume=0,unit_volume=0,limit=0,chassis=0,body_mass=0,unit_mass=0;
+    if(!Read(read,trailer+0x40,volume)||!Read(read,cargo+0x98,unit_volume)||!Read(read,trailer+0x30,limit)||
+       !Read(read,trailer+0x38,chassis)||!Read(read,trailer+0x34,body_mass)||!Read(read,cargo+0x9c,unit_mass))return false;
+    return std::isfinite(volume)&&std::isfinite(unit_volume)&&std::isfinite(limit)&&std::isfinite(chassis)&&
+        std::isfinite(body_mass)&&std::isfinite(unit_mass)&&volume>=unit_volume&&chassis+body_mass+unit_mass<=limit;
+}
 }

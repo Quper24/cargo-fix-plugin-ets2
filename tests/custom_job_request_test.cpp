@@ -55,19 +55,9 @@ int main(){
     Check(AvailableCargos(catalog,&catalog.companies[0],true,trailer).empty());
     Check(AvailableCargos(catalog,&catalog.companies[0],false,trailer).size()==1);
     trailer.status=TrailerCargoStatus::Failed;Check(!trailer.Allows("cargo.mod_tank"));
-    std::uintptr_t inputs[]={11,22};OwnedCargoProbe probe(inputs,2);
-    const auto* context=probe.company.definition;
-    Check(context==&probe.definition && context->flags==0x80000000u && context->data==inputs && context->count==2);
-    DestinationQuery query{7,Market::OwnedTrailer,request.origin,request.cargo};
-    DestinationOptions options;options.query=query;options.companies={request.destination};
-    Check(!options.Matches(query)&&!options.Allows(request.destination));
-    options.checked=true;options.status=CreateStatus::Created;
-    Check(options.Matches(query)&&options.Allows(request.destination));
-    Check(!options.Allows("company.volatile.c.y"));
-    auto stale=query;++stale.session;Check(!options.Matches(stale));
-    stale=query;stale.cargo="cargo.mod_tank";Check(!options.Matches(stale));
-    stale=query;stale.origin="company.volatile.c.y";Check(!options.Matches(stale));
-    options.status=CreateStatus::InvalidGameData;Check(!options.Allows(request.destination));
+    auto any_receiver=request;any_receiver.destination="company.volatile.c.y";
+    Check(ValidSelection(catalog,any_receiver)); // Direct owned jobs ignore receiver assortment too.
+    any_receiver.market=Market::Freight;Check(!ValidSelection(catalog,any_receiver));
     RequestQueue queue;Check(queue.Push(request));Check(!queue.Push(wrong));
     Check(queue.Take()->destination==request.destination);Check(!queue.Take());
     Check(queue.Push(request));queue.Clear();Check(!queue.Take());
@@ -85,6 +75,24 @@ int main(){
     Check(KeepCandidate(candidates,3,44)==0);
     using namespace custom_jobs::creation;
     List list;std::vector<EventNode> selected;
+    list.Put<std::uintptr_t>(0x720,0x800);list.Put<std::uint64_t>(0x728,2);
+    const DirectRouteRow first{0xaaa,150,3,0x1234},second{0xbbb,250,UINT16_MAX,0x4321};
+    list.Put(0x800,first);list.Put(0x810,second);
+    DirectRouteRow route;
+    Check(ReadDirectRoute(list.read,0x700,0xbbb,route));
+    Check(route.destination==0xbbb && route.distance==250 && route.ferry==UINT16_MAX && route.reserved==0x4321);
+    Check(!ReadDirectRoute(list.read,0x700,0xccc,route));
+    Check(!ReadDirectRoute(list.read,UINTPTR_MAX-8,0xbbb,route));
+    list.Put<std::uint64_t>(0x728,1000001);Check(!ReadDirectRoute(list.read,0x700,0xbbb,route));
+    // Trailer countries and cargo frequency/skills do not affect physical compatibility.
+    list.Put<std::uintptr_t>(0x9a8,0xb00);list.Put<std::uint64_t>(0x9b0,1);list.Put<std::uint64_t>(0xb00,17);
+    list.Put<std::uint64_t>(0xa48,17);list.Put<float>(0xa40,100);list.Put<float>(0xa30,1000);
+    list.Put<float>(0x998,10);list.Put<float>(0x99c,20);
+    Check(CargoFitsTrailer(list.read,0x900,0xa00));
+    list.Put<std::uint64_t>(0xa48,18);Check(!CargoFitsTrailer(list.read,0x900,0xa00));
+    list.Put<std::uint64_t>(0xa48,17);list.Put<float>(0xa40,5);Check(!CargoFitsTrailer(list.read,0x900,0xa00));
+    list.Put<float>(0xa40,100);list.Put<float>(0xa30,10);Check(!CargoFitsTrailer(list.read,0x900,0xa00));
+    Check(!CargoFitsTrailer(list.read,UINTPTR_MAX-8,0xa00));
     list.Put<std::uintptr_t>(0x600,0xaaa);list.Put<std::uintptr_t>(0x610,0xbbb);
     list.Put<std::uint32_t>(0x618,0x12345678);
     std::uintptr_t rows[]={0x600,0x610};std::uint64_t row_count=2;

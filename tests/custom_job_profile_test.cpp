@@ -1,4 +1,5 @@
 #include "custom_jobs.h"
+#include "owned_candidate_probe.h"
 #include "game_resolver.h"
 #include <Windows.h>
 #include <algorithm>
@@ -43,12 +44,19 @@ void CheckOwnedProbe(const std::vector<unsigned char>& image,const CreationCode&
     using Collect=std::uint64_t(__fastcall*)(std::uintptr_t,Vector*,std::uintptr_t,std::uintptr_t);
     const auto collect=reinterpret_cast<Collect>(native);
     const auto trailer_address=reinterpret_cast<std::uintptr_t>(trailer.data());
+    Reader reader=[](std::uintptr_t at,void* out,std::size_t size){std::memcpy(out,reinterpret_cast<const void*>(at),size);return true;};
+    Check(CargoFitsTrailer(reader,input,trailer_address));
     Check(collect(probe.Address(),&values,0,trailer_address)==1 && values.count==1 && output==input);
     values.count=0;output=0;put(trailer,0x48,std::uint64_t{22});
+    Check(!CargoFitsTrailer(reader,input,trailer_address));
     Check(collect(probe.Address(),&values,0,trailer_address)==0 && !values.count && !output);
     put(trailer,0x48,body);put(trailer,0x40,0.f);
+    Check(!CargoFitsTrailer(reader,input,trailer_address));
     Check(collect(probe.Address(),&values,0,trailer_address)==0 && !values.count);
-    put(trailer,0x40,100.f);probe.definition.flags=0;
+    put(trailer,0x40,100.f);put(cargo,0x68,0.f);
+    Check(CargoFitsTrailer(reader,input,trailer_address)); // Spawn probability is irrelevant to a direct job.
+    Check(collect(probe.Address(),&values,0,trailer_address)==0 && !values.count);
+    put(cargo,0x68,1.f);probe.definition.flags=0;
     Check(collect(probe.Address(),&values,0,trailer_address)==0 && !values.count);
     Check(VirtualFree(native,0,MEM_RELEASE));
 }

@@ -13,31 +13,31 @@ struct JobRequest {
 enum class CreateStatus {
     Created, AlreadyPresent, Unsupported, NotReady, Cancelled, InvalidSelection,
     TrailerRequired, CargoUnavailable, DestinationUnavailable, NoSlot, ReplaceRequired,
-    InvalidGameData, AllocationFailed, GenerationFailed, SchedulingFailed
+    InvalidGameData, AllocationFailed, GenerationFailed, SchedulingFailed, RouteDataUnavailable
 };
 struct CreateResult {
     CreateStatus status=CreateStatus::Cancelled;
     Market market=Market::Freight;
     bool Success() const { return status==CreateStatus::Created || status==CreateStatus::AlreadyPresent; }
 };
-struct DestinationQuery {
-    std::uint64_t session=0;
-    Market market=Market::OwnedTrailer;
-    std::string origin,cargo;
-    bool operator==(const DestinationQuery& other) const {
-        return session==other.session && market==other.market && origin==other.origin && cargo==other.cargo;
-    }
+struct DirectRouteRow {
+    std::uintptr_t destination=0;
+    std::uint16_t distance=0,ferry=UINT16_MAX;
+    std::uint32_t reserved=0;
 };
-struct DestinationOptions {
-    DestinationQuery query;
-    bool checked=false;
-    CreateStatus status=CreateStatus::NotReady;
-    std::vector<std::string> companies;
-    bool Matches(const DestinationQuery& value) const {return checked && query==value;}
-    bool Allows(const std::string& id) const {
-        return checked && status==CreateStatus::Created && std::find(companies.begin(),companies.end(),id)!=companies.end();
+static_assert(sizeof(DirectRouteRow)==16);
+inline bool ReadDirectRoute(const Reader& read,std::uintptr_t company,std::uintptr_t destination,DirectRouteRow& result){
+    result={};
+    std::uintptr_t rows=0;std::uint64_t count=0;
+    if(!company || company>UINTPTR_MAX-0x30 || !destination || !Read(read,company+0x20,rows)||
+       !Read(read,company+0x28,count)||count>1000000||!rows||rows>UINTPTR_MAX-count*sizeof(DirectRouteRow))return false;
+    for(std::uint64_t n=0;n<count;++n){
+        DirectRouteRow row;
+        if(!Read(read,rows+n*sizeof(row),row))return false;
+        if(row.destination==destination){result=row;return true;}
     }
-};
+    return false;
+}
 inline bool ValidSelection(const Catalog& catalog,const JobRequest& request) {
     if(request.origin.empty() || request.origin==request.destination || request.origin.size()>512 || request.destination.size()>512 || request.cargo.size()>512 ||
        (request.market!=Market::Freight && request.market!=Market::OwnedTrailer))return false;
@@ -46,7 +46,7 @@ inline bool ValidSelection(const Catalog& catalog,const JobRequest& request) {
     const bool known_cargo=request.market==Market::OwnedTrailer?
         std::any_of(catalog.cargos.begin(),catalog.cargos.end(),[&](const auto& cargo){return cargo.id==request.cargo;}):
         from && std::find(from->outgoing.begin(),from->outgoing.end(),request.cargo)!=from->outgoing.end();
-    return from && to && known_cargo && Accepts(*to,request.cargo);
+    return from && to && known_cargo && (request.market==Market::OwnedTrailer || Accepts(*to,request.cargo));
 }
 class RequestQueue {
 public:

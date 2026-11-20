@@ -79,8 +79,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     const auto* origin = find_company(origin_id);
     if (!origin && !origin_id.empty()) { origin_id.clear(); if(market==0)cargo_id.clear(); destination_id.clear(); }
     auto receiver_allowed=[&](const Company& company){
-        if(company.id==origin_id || cargo_id.empty() || !Accepts(company,cargo_id))return false;
-        return market==0 || (state->destinations.Matches({state->session,Market::OwnedTrailer,origin_id,cargo_id}) && state->destinations.Allows(company.id));
+        return company.id!=origin_id && !cargo_id.empty() && (market==1 || Accepts(company,cargo_id));
     };
     auto city_select = [&](const char* label, std::string& selected, bool destination) {
         std::map<std::string,std::string> cities;
@@ -144,29 +143,16 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         }
         ImGui::EndCombo();
     }
-    if(market==1 && !origin_id.empty() && !cargo_id.empty()){
-        const DestinationQuery query{state->session,Market::OwnedTrailer,origin_id,cargo_id};
-        QueueDestinations(query);
-        if(!state->destinations.Matches(query))ImGui::TextDisabled("%s",tr("Checking destinations for your trailer...","Проверяю направления для вашего прицепа..."));
-        else if(state->destinations.status!=CreateStatus::Created)
-            ImGui::TextWrapped("%s",CreationMessage({state->destinations.status,Market::OwnedTrailer},russian).c_str());
-        else if(state->destinations.companies.empty())
-            ImGui::TextWrapped("%s",tr("The game found no destinations for this cargo and trailer from this company. Choose another origin or cargo.",
-                "Игра не нашла направлений для этого груза и прицепа с выбранной базы. Выберите другую базу отправления или груз."));
-    }
     if (city_select(tr("Destination city", "Город назначения"), destination_city, true)) destination_id.clear();
     base_select(tr("Destination company", "База назначения"), destination_city, destination_id, true);
     const auto* destination = find_company(destination_id);
-    if(destination && (!Accepts(*destination,cargo_id) || (market==1 && state->destinations.Matches({state->session,Market::OwnedTrailer,origin_id,cargo_id}) && !state->destinations.Allows(destination_id)))){
-        destination_city.clear();destination_id.clear();
-    }
+    if(destination && !receiver_allowed(*destination)){destination_city.clear();destination_id.clear();}
     if(market==0)ImGui::Checkbox(tr("Allow replacing one source-company offer","Разрешить замену одного предложения на базе отправления"),&allow_replace);
-    ImGui::TextWrapped("%s",tr("The game checks the cargo, route and trailer. Accept the created offer from its market.",
-                              "Игра проверит груз, направление и прицеп. Готовое предложение можно принять на соответствующем рынке."));
+    ImGui::TextWrapped("%s",tr("Select your companies and a compatible cargo. Accept the created offer from its market.",
+                              "Выберите базы и подходящий прицепу груз. Готовое предложение можно принять на соответствующем рынке."));
     if(!state->creation_supported)ImGui::TextDisabled("%s",tr("Native job creation is unavailable for this game code.","Создание заказа недоступно для этого кода игры."));
     JobRequest request{state->session,market==1?Market::OwnedTrailer:Market::Freight,origin_id,cargo_id,destination_id,allow_replace};
-    const bool destination_ready=market==0 || (state->destinations.Matches({state->session,Market::OwnedTrailer,origin_id,cargo_id}) && state->destinations.Allows(destination_id));
-    ImGui::BeginDisabled(!state->creation_supported || !ValidSelection(catalog,request) || !destination_ready);
+    ImGui::BeginDisabled(!state->creation_supported || !ValidSelection(catalog,request));
     if(ImGui::Button(tr("Create job", "Создать заказ"))){
         if(QueueCreation(request)){request_error.clear();create();}
         else request_error=tr("Request not queued. Read the session and try again.","Запрос не поставлен в очередь. Считайте сессию и повторите действие.");
