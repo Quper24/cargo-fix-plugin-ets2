@@ -24,6 +24,7 @@ std::uintptr_t module = 0, pools = 0, last_economy = 0;
 std::uint64_t session = 0;
 bool was_ready = false;
 Logger log = nullptr;
+Availability availability = Availability::UnsupportedExe;
 bool Memory(std::uintptr_t address, void* bytes, std::size_t length) {
     if (!ReadableMemory(address, length)) return false;
     std::memcpy(bytes, reinterpret_cast<const void*>(address), length); return true;
@@ -59,20 +60,34 @@ void Initialize(std::uintptr_t base, const GameProfile& game,
                 const std::filesystem::path& executable, Logger logger) {
     module = base; pools = 0; last_economy = 0; log = logger;
     const auto digest = Digest(executable);
+    availability = digest.empty() ? Availability::UnreadableExe : Availability::UnsupportedExe;
     for (const auto& profile : profiles) {
-        if (digest != profile.sha256 || game.generator != profile.generator || game.fill_company != profile.fill) continue;
+        if (digest != profile.sha256) continue;
+        if (game.generator != profile.generator || game.fill_company != profile.fill) {
+            availability = Availability::CoreMismatch; break;
+        }
+        availability = Availability::CodeMismatch;
         std::array<unsigned char, 7> guard{};
         if (Memory(module + profile.guard_rva, guard.data(), guard.size()) && guard == profile.guard) {
             pools = module + profile.pools;
+            availability = Availability::Ready;
             if (log) log("Experimental session catalog enabled for an exact researched EXE; catalog performs no game/save writes.");
         }
         break;
+    }
+    if (!pools && log) {
+        constexpr const char* reasons[] = {"unsupported_exe", "unreadable_exe", "core_mismatch", "code_mismatch", "ready"};
+        const auto message = std::string("Experimental catalog unavailable: reason=") + reasons[static_cast<int>(availability)] +
+            ", sha256=" + (digest.empty() ? "unreadable" : digest) +
+            ", generator=" + std::to_string(game.generator) + ", fill=" + std::to_string(game.fill_company) + ".";
+        log(message.c_str());
     }
     Reset();
 }
 void Reset() {
     last_economy = 0; was_ready = false;
     auto next = std::make_shared<View>(); next->session = ++session; next->supported = pools != 0;
+    next->availability = availability;
     Publish(std::move(next));
 }
 void Observe(std::uintptr_t economy, bool ready) {
@@ -83,6 +98,7 @@ void Scan(std::uintptr_t economy) {
     if (last_economy && last_economy != economy) Reset();
     last_economy = economy;
     auto next = std::make_shared<View>(); next->session = session; next->supported = pools != 0;
+    next->availability = availability;
     if (pools) next->scanned = BuildCatalog(Memory, economy, pools, next->catalog, next->error);
     else next->error = "This EXE has no verified experimental catalog profile.";
     if (log) {
@@ -94,11 +110,12 @@ void Scan(std::uintptr_t economy) {
     Publish(std::move(next));
 }
 std::shared_ptr<const View> Snapshot() { std::lock_guard<std::mutex> lock(mutex); return view; }
-void Shutdown() { pools = module = 0; log = nullptr; Reset(); }
+void Shutdown() { pools = module = 0; log = nullptr; availability = Availability::UnsupportedExe; Reset(); }
 #ifdef CARGO_CONTROL_CATALOG_PREVIEW
 void PreviewCatalog(Catalog catalog) {
     auto next = std::make_shared<View>(); next->session = ++session;
     next->supported = next->scanned = true; next->catalog = std::move(catalog);
+    next->availability = Availability::Ready;
     Publish(std::move(next));
 }
 #endif

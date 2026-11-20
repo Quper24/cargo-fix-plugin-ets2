@@ -5,10 +5,12 @@
 #include <memory>
 
 namespace custom_jobs {
+enum class Availability { UnsupportedExe, UnreadableExe, CoreMismatch, CodeMismatch, Ready };
 struct View {
     std::uint64_t session = 0;
     bool supported = false;
     bool scanned = false;
+    Availability availability = Availability::UnsupportedExe;
     Catalog catalog;
     std::string error;
 };

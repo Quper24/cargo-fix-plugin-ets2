@@ -16,6 +16,8 @@ REFERENCE = 'ets2-public-1.62.1.0'
 # Existing research establishes only the two root addresses per snapshot.
 SNAPSHOTS = {
     REFERENCE: ('eurotrucks2.exe', 0x7BB610, 0x7B8B10),
+    'ets2-public-1.62.3.3': ('eurotrucks2.exe', 0x7BBA10, 0x7B8F10),
+    'ats-public-1.62.2.2': ('amtrucks.exe', 0x7BC750, 0x7B9C50),
     'ats-public-1.62.1.1': ('amtrucks.exe', 0x7BB2A0, 0x7B87A0),
     'ats-oculus-1.62.1.1001': ('amtrucks.exe', 0x7BB030, 0x7B8530),
     'ats-oculus-1.62.1.1001-build-26457597-staged':
