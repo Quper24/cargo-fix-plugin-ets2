@@ -28,11 +28,11 @@ void DetectLanguage() {
 
 }
 }
-void Initialize(const std::filesystem::path&) {
+void Initialize(const std::filesystem::path&, bool american_truck) {
 
     PWSTR documents = nullptr;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &documents))) {
-        home = std::filesystem::path(documents) / L"Euro Truck Simulator 2";
+        home = std::filesystem::path(documents) / (american_truck ? L"American Truck Simulator" : L"Euro Truck Simulator 2");
         CoTaskMemFree(documents);
     }
     int count = 0;

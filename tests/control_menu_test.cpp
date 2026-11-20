@@ -19,7 +19,7 @@ HWND OwnMenu() {
     HWND found = nullptr;
     EnumThreadWindows(GetCurrentThreadId(), [](HWND h, LPARAM data)->BOOL {
         wchar_t name[100]{}; GetClassNameW(h,name,100);
-        if (std::wstring(name) == L"CargoControlETS2Menu") { *reinterpret_cast<HWND*>(data)=h; return FALSE; }
+        if (std::wstring(name) == L"CargoControlMenu") { *reinterpret_cast<HWND*>(data)=h; return FALSE; }
         return TRUE;
     },reinterpret_cast<LPARAM>(&found));
     return found;
@@ -27,7 +27,7 @@ HWND OwnMenu() {
 int main() {
     const auto dir = std::filesystem::temp_directory_path() / (L"CargoControlMenuCheck-" + std::to_wstring(GetCurrentProcessId()));
     std::filesystem::create_directories(dir);
-    const auto ini = dir / L"CargoControlETS2.ini";
+    const auto ini = dir / L"CargoControl.ini";
     Check(WritePrivateProfileStringW(L"General", L"HotkeyVirtualKey", L"119", ini.c_str()));
     control_menu::Initialize(dir);
     HWND menu = OwnMenu();

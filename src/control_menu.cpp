@@ -57,13 +57,13 @@ LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
             const auto a = Valid(static_cast<unsigned>(SendMessageW(cargo_edit, HKM_GETHOTKEY, 0, 0)));
             const auto b = Valid(static_cast<unsigned>(SendMessageW(freight_edit, HKM_GETHOTKEY, 0, 0)));
             if (!hotkeys::PairAllowed(a, b)) {
-                MessageBoxW(hwnd, Tr(L"Choose different shortcuts. Ctrl+Alt+F9 opens this menu.", L"Назначьте разные сочетания. Ctrl+Alt+F9 открывает это меню."), L"Cargo Control ETS2", MB_OK); return 0;
+                MessageBoxW(hwnd, Tr(L"Choose different shortcuts. Ctrl+Alt+F9 opens this menu.", L"Назначьте разные сочетания. Ctrl+Alt+F9 открывает это меню."), L"Cargo Control", MB_OK); return 0;
             }
             // Single write persists both bindings together; no partial saved pair.
             wchar_t values[160];
             const int n = swprintf_s(values, L"Cargo=%u%cFreight=%u%c", unsigned(a), 0, unsigned(b), 0);
             if (n < 0 || !WritePrivateProfileSectionW(L"Bindings", values, ini.c_str())) {
-                MessageBoxW(hwnd, Tr(L"Could not save settings. Check write access to the plugin folder.", L"Не удалось сохранить настройки. Проверьте доступ на запись в папку плагина."), L"Cargo Control ETS2", MB_OK | MB_ICONERROR); return 0;
+                MessageBoxW(hwnd, Tr(L"Could not save settings. Check write access to the plugin folder.", L"Не удалось сохранить настройки. Проверьте доступ на запись в папку плагина."), L"Cargo Control", MB_OK | MB_ICONERROR); return 0;
             }
             cargo = a; freight = b; Close(); return 0;
         }
@@ -110,7 +110,7 @@ void Open() {
 }
 }
 void Initialize(const std::filesystem::path& directory) {
-    ini = directory / L"CargoControlETS2.ini";
+    ini = directory / L"CargoControl.ini";
     cargo = Valid(GetPrivateProfileIntW(L"Bindings", L"Cargo", 0, ini.c_str()));
     freight = Valid(GetPrivateProfileIntW(L"Bindings", L"Freight", 0, ini.c_str()));
     const WORD reserved = MAKEWORD(VK_F9, HOTKEYF_CONTROL | HOTKEYF_ALT);
@@ -118,11 +118,11 @@ void Initialize(const std::filesystem::path& directory) {
     if (freight == reserved || (cargo && freight == cargo)) freight = 0;
     INITCOMMONCONTROLSEX cc{sizeof(cc), ICC_HOTKEY_CLASS}; InitCommonControlsEx(&cc);
     WNDCLASSW cls{}; cls.lpfnWndProc = Procedure; cls.hInstance = GetModuleHandleW(nullptr);
-    cls.lpszClassName = L"CargoControlETS2Menu"; cls.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    cls.lpszClassName = L"CargoControlMenu"; cls.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     RegisterClassW(&cls);
     field_brush = CreateSolidBrush(menu_style::Surface);
     ui_font = CreateFontW(-16,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-    window = CreateWindowExW(WS_EX_TOOLWINDOW, cls.lpszClassName, L"Cargo Control ETS2", WS_POPUP | WS_CLIPCHILDREN,
+    window = CreateWindowExW(WS_EX_TOOLWINDOW, cls.lpszClassName, L"Cargo Control", WS_POPUP | WS_CLIPCHILDREN,
         0, 0, menu_style::Width, menu_style::Height, nullptr, nullptr, cls.hInstance, nullptr);
     if (!window) return;
     SetWindowRgn(window,CreateRoundRectRgn(0,0,menu_style::Width+1,menu_style::Height+1,24,24),FALSE);
@@ -168,6 +168,6 @@ void Shutdown() {
     if (window) DestroyWindow(window); window = nullptr;
     if (ui_font) DeleteObject(ui_font); ui_font = nullptr;
     if (field_brush) DeleteObject(field_brush); field_brush = nullptr;
-    UnregisterClassW(L"CargoControlETS2Menu", GetModuleHandleW(nullptr));
+    UnregisterClassW(L"CargoControlMenu", GetModuleHandleW(nullptr));
 }
 }

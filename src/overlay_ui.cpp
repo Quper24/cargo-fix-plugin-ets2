@@ -1,10 +1,12 @@
 #include "overlay_ui.h"
+#include "settings_file.h"
 #include "notifications.h"
 #include "branding.h"
 #include "hotkey_binding.h"
 #include "notification_lifetime.h"
 #include "menu_pointer.h"
 #include "brand_palette.h"
+#include "plugin_version.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -185,7 +187,7 @@ void DrawMenu() {
     ImGui::SetNextWindowSize({900*scale,660*scale});
     ImGui::SetNextWindowPos({io.DisplaySize.x/2,io.DisplaySize.y/2},ImGuiCond_Appearing,{.5f,.5f});
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
-    ImGui::Begin("Cargo Control ETS2",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar);
+    ImGui::Begin("Cargo Control",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar);
     const auto origin=ImGui::GetWindowPos(); auto* draw=ImGui::GetWindowDrawList();
     auto pos=[&](float x,float y){return ImVec2(origin.x+x*scale,origin.y+y*scale);};
     auto text=[&](float x,float y,float size,ImU32 color,const char* value){draw->AddText(font,size*scale,pos(x,y),color,value,nullptr,0);};
@@ -196,19 +198,19 @@ void DrawMenu() {
         if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(std::min(1.f,accent.x*1.08f),std::min(1.f,accent.y*1.08f),std::min(1.f,accent.z*1.08f),1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(accent.x*.85f,accent.y*.85f,accent.z*.85f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1)); }
         bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar();return hit;
     };
-    text(32,25,14,green,"QUPER SIMULATOR");text(30,54,34,white,"Cargo Control ETS2");
+    text(32,25,14,green,"QUPER SIMULATOR");text(30,54,34,white,"Cargo Control");
     text(32,108,17,muted,Tr("Your cargo market. Your rules.","Ваш рынок грузов. Ваши правила."));
     if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),pos(710,23),pos(842,120));
     if(button("X##top",850,18,30,30))CloseMenu();
     card(28,156,410,204);card(462,156,410,204);
     text(48,176,23,white,Tr("Owned-trailer cargo","Грузы для прицепа"));
-    text(48,220,16,muted,Tr("Add up to 5 offers per company.\nKeep your existing orders.","Добавить до 5 грузов в каждой компании.\nСуществующие заказы сохраняются."));
+    text(48,220,16,muted,Tr("Replace current owned-trailer offers.\nUp to 5 new offers per company.","Заменить текущие грузы для прицепа.\nДо 5 новых предложений на компанию."));
     text(482,176,23,white,Tr("Freight & Quick jobs","Рынок и агентства"));
     text(482,220,16,muted,Tr("Refresh offers across all companies.\nExisting orders will be replaced.","Обновить предложения во всех компаниях.\nСуществующие заказы будут заменены."));
-    if(button(Tr("Add cargo","Добавить грузы"),48,298,370,42,true)) { Request(1);CloseMenu(); }
+    if(button(Tr("Refresh cargo","Обновить грузы"),48,298,370,42,true)) { Request(1);CloseMenu(); }
     if(button(Tr("Refresh orders","Обновить заказы"),482,298,370,42,true)) { Request(2);CloseMenu(); }
     text(32,385,21,white,Tr("Keyboard shortcuts","Горячие клавиши"));
-    text(48,428,15,muted,Tr("Add cargo","Добавление грузов"));text(482,428,15,muted,Tr("Refresh orders","Обновление заказов"));
+    text(48,428,15,muted,Tr("Refresh cargo","Обновление грузов"));text(482,428,15,muted,Tr("Refresh orders","Обновление заказов"));
     const auto a=(capture==1?std::string(Tr("Press a shortcut…","Нажмите сочетание…")):BindingName(draft_cargo))+"##cargo";
     const auto b=(capture==2?std::string(Tr("Press a shortcut…","Нажмите сочетание…")):BindingName(draft_freight))+"##freight";
     if(button(a.c_str(),48,458,292,38))capture=1;
@@ -218,6 +220,7 @@ void DrawMenu() {
     text(32,518,15,muted,Tr("Select a field and press a shortcut. Clear disables the binding.","Выберите поле и нажмите сочетание. «Сброс» отключает назначение."));
     text(32,545,15,muted,Tr("Available in the garage and while driving. Menu: Ctrl + Alt + F9.","Доступно в гараже и в пути. Меню: Ctrl + Alt + F9."));
     text(32,599,14,error.empty()?muted:white,error.empty()?Tr("Save to apply your shortcuts.","Изменения применяются после сохранения."):error.c_str());
+    text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
     if(button(Tr("Save","Сохранить"),576,588,142,44,true)) {
         if(!hotkeys::PairAllowed(draft_cargo,draft_freight))error=Tr("Choose different shortcuts.","Назначьте разные сочетания.");
         else { wchar_t values[160]{};swprintf_s(values,L"Cargo=%u%cFreight=%u%c",unsigned(draft_cargo),0,unsigned(draft_freight),0);
@@ -237,7 +240,7 @@ void DrawNotice() {
     ImGui::Begin("##cargo-result",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoScrollbar);
     const auto p=ImGui::GetWindowPos();auto* draw=ImGui::GetWindowDrawList();
     draw->AddRectFilled(p,{p.x+4,p.y+h},green);
-    draw->AddText(font,16,{p.x+24,p.y+16},green,"CARGO CONTROL ETS2");
+    draw->AddText(font,16,{p.x+24,p.y+16},green,"CARGO CONTROL");
     draw->AddText(font,20,{p.x+24,p.y+50},white,notice.c_str(),nullptr,body_width);
     if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),{p.x+w-152,p.y+h-116},{p.x+w-20,p.y+h-19});
     ImGui::End();
@@ -354,9 +357,10 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu) {
     ++rendered;
 }
 bool Initialize(const std::filesystem::path& directory,Logger log,bool install_hook) {
-    std::lock_guard<std::recursive_mutex> guard(mutex);logger=log;ini=directory/L"CargoControlETS2.ini";
-    cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,ini.c_str()));
-    freight=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Freight",0,ini.c_str()));
+    std::lock_guard<std::recursive_mutex> guard(mutex);logger=log;ini=directory/L"CargoControl.ini";
+    const auto read_ini=SettingsReadPath(directory);
+    cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,read_ini.c_str()));
+    freight=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Freight",0,read_ini.c_str()));
     if(cargo==hotkeys::Menu)cargo=0;if(!hotkeys::PairAllowed(cargo,freight))freight=0;
     stopping=false;requested=0;menu=false;capture=0;rendered=0;present_calls=0;input_calls=0;
     if(!install_hook)return true;

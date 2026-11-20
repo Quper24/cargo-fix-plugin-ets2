@@ -12,7 +12,7 @@ HWND OwnMenu() {
     HWND found = nullptr;
     EnumThreadWindows(GetCurrentThreadId(), [](HWND h, LPARAM data)->BOOL {
         wchar_t name[100]{}; GetClassNameW(h,name,100);
-        if (std::wstring(name) == L"CargoControlETS2Menu") { *reinterpret_cast<HWND*>(data)=h; return FALSE; }
+        if (std::wstring(name) == L"CargoControlMenu") { *reinterpret_cast<HWND*>(data)=h; return FALSE; }
         return TRUE;
     },reinterpret_cast<LPARAM>(&found));
     return found;

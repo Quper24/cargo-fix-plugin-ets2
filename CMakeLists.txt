@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(CargoControlETS2 LANGUAGES C CXX RC)
+project(CargoControl VERSION 1.0.1 LANGUAGES C CXX RC)
 
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Build this plugin with 64-bit MSVC on Windows.")
@@ -17,25 +17,27 @@ target_include_directories(qs_imgui PUBLIC vendor/imgui)
 target_link_libraries(qs_imgui PUBLIC d3d11 dxgi d3dcompiler dwmapi)
 
 configure_file(src/branding.rc.in "${CMAKE_CURRENT_BINARY_DIR}/branding.rc" @ONLY)
+configure_file(src/plugin_version.h.in "${CMAKE_CURRENT_BINARY_DIR}/plugin_version.h" @ONLY)
 set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/branding.rc" PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/quper-logo.png")
-add_library(ets2_cargo_market_control SHARED
+add_library(cargo_control SHARED
   src/overlay_ui.cpp
   src/plugin.cpp
   src/game_profile.cpp
+  src/game_resolver.cpp
   src/notifications.cpp
   src/freight.cpp
   src/branding.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/branding.rc"
   src/version.rc
-  src/CargoControlETS2.def
+  src/CargoControl.def
 )
-target_compile_features(ets2_cargo_market_control PRIVATE cxx_std_17)
-target_include_directories(ets2_cargo_market_control PRIVATE "${SCS_SDK_ROOT}/include")
-target_compile_definitions(ets2_cargo_market_control PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(ets2_cargo_market_control PRIVATE qs_imgui qs_minhook dinput8 dxguid comctl32 bcrypt user32 gdi32 shell32 ole32 gdiplus)
-target_compile_options(ets2_cargo_market_control PRIVATE /utf-8)
-set_target_properties(ets2_cargo_market_control PROPERTIES
-  OUTPUT_NAME "CargoControlETS2"
+target_compile_features(cargo_control PRIVATE cxx_std_17)
+target_include_directories(cargo_control PRIVATE "${SCS_SDK_ROOT}/include" "${CMAKE_CURRENT_BINARY_DIR}")
+target_compile_definitions(cargo_control PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(cargo_control PRIVATE qs_imgui qs_minhook dinput8 dxguid comctl32 version user32 gdi32 shell32 ole32 gdiplus)
+target_compile_options(cargo_control PRIVATE /utf-8)
+set_target_properties(cargo_control PROPERTIES
+  OUTPUT_NAME "CargoControl"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -43,6 +45,12 @@ set_target_properties(ets2_cargo_market_control PROPERTIES
 option(CARGO_CONTROL_BUILD_CHECKS "Build offline generation-limit checks" OFF)
 if(CARGO_CONTROL_BUILD_CHECKS)
   enable_testing()
+  enable_language(ASM_MASM)
+  add_executable(owned_offers_check tests/owned_offers_test.cpp tests/budget_stub_probe.asm)
+  target_include_directories(owned_offers_check PRIVATE src)
+  target_compile_features(owned_offers_check PRIVATE cxx_std_17)
+  target_compile_definitions(owned_offers_check PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  add_test(NAME owned_offers COMMAND owned_offers_check)
   add_executable(profile_readiness_check tests/profile_readiness_test.cpp)
   target_include_directories(profile_readiness_check PRIVATE src)
   target_compile_features(profile_readiness_check PRIVATE cxx_std_17)
@@ -54,6 +62,23 @@ if(CARGO_CONTROL_BUILD_CHECKS)
   target_compile_definitions(game_profile_check PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_link_libraries(game_profile_check PRIVATE bcrypt)
   add_test(NAME game_profile_selection COMMAND game_profile_check)
+  add_executable(game_resolver_check tests/game_resolver_test.cpp src/game_resolver.cpp src/game_profile.cpp)
+  target_include_directories(game_resolver_check PRIVATE src)
+  target_compile_features(game_resolver_check PRIVATE cxx_std_17)
+  target_compile_definitions(game_resolver_check PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+  target_link_libraries(game_resolver_check PRIVATE version)
+  add_test(NAME game_resolver_input COMMAND game_resolver_check)
+  foreach(snapshot ats-oculus-1.62.1.1001 ats-public-1.62.1.1 ats-oculus-1.62.1.1001-build-26457597-staged ets2-public-1.62.1.0 public_beta-1.62.0.10 temporary_1_61-1.61.1.1 oculus-1.61.1.1009)
+    if(snapshot MATCHES "^ats-")
+      set(game_exe amtrucks.exe)
+    else()
+      set(game_exe eurotrucks2.exe)
+    endif()
+    set(exe_snapshot "${CMAKE_CURRENT_SOURCE_DIR}/diagnostics/executables/${snapshot}/${game_exe}")
+    if(EXISTS "${exe_snapshot}")
+      add_test(NAME "resolve_${snapshot}" COMMAND game_resolver_check "${exe_snapshot}")
+    endif()
+  endforeach()
   foreach(snapshot temporary_1_61-1.61.1.1 oculus-1.61.1.1009 public_beta-1.62.0.10)
     set(exe_snapshot "${CMAKE_CURRENT_SOURCE_DIR}/diagnostics/executables/${snapshot}/eurotrucks2.exe")
     if(EXISTS "${exe_snapshot}")
@@ -63,6 +88,7 @@ if(CARGO_CONTROL_BUILD_CHECKS)
   set(reference_image "${CMAKE_CURRENT_SOURCE_DIR}/diagnostics/executables/reference-1.61.1.9-mapped.bin")
   if(EXISTS "${reference_image}")
     add_test(NAME profile_reference_1.61.1.9 COMMAND game_profile_check "${reference_image}" --mapped-reference)
+    add_test(NAME resolve_reference_1.61.1.9 COMMAND game_resolver_check "${reference_image}" --mapped-reference)
   endif()
   add_executable(generation_limit_check tests/generation_limit_test.cpp)
   target_include_directories(generation_limit_check PRIVATE src)
@@ -83,7 +109,7 @@ if(CARGO_CONTROL_BUILD_CHECKS)
   target_compile_definitions(notification_lifetime_check PRIVATE NOMINMAX)
   add_test(NAME notification_lifetime COMMAND notification_lifetime_check)
   add_executable(overlay_dx11_check tests/overlay_dx11_test.cpp src/overlay_ui.cpp src/branding.cpp "${CMAKE_CURRENT_BINARY_DIR}/branding.rc")
-  target_include_directories(overlay_dx11_check PRIVATE src)
+  target_include_directories(overlay_dx11_check PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}")
   target_compile_features(overlay_dx11_check PRIVATE cxx_std_17)
   target_compile_definitions(overlay_dx11_check PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_compile_options(overlay_dx11_check PRIVATE /utf-8)

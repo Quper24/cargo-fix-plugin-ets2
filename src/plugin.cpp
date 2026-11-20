@@ -1,5 +1,5 @@
 #include <Windows.h>
-#include <bcrypt.h>
+#include <MinHook.h>
 
 #include <algorithm>
 #include <array>
@@ -18,19 +18,26 @@
 #include "overlay_ui.h"
 #include "profile_readiness.h"
 #include "game_profile.h"
+#include "game_resolver.h"
+#include "owned_offers.h"
+#include "plugin_version.h"
 
 #include "scssdk_telemetry.h"
 #include "scssdk_telemetry_event.h"
 #include "eurotrucks2/scssdk_eut2.h"
 #include "eurotrucks2/scssdk_telemetry_eut2.h"
+#include "amtrucks/scssdk_ats.h"
 
 namespace {
 
 const GameProfile* g_profile = nullptr;
+GameProfile g_resolved_profile{};
+GameKind g_game = GameKind::Unknown;
 
 
 using GenerateFn = void(__fastcall*)(std::uintptr_t company, std::uintptr_t economy);
 using RefillFn = void(__fastcall*)(std::uintptr_t company, std::uintptr_t economy);
+GenerateFn g_original_generator = nullptr;
 
 scs_log_t g_log = nullptr;
 HMODULE g_plugin_module = nullptr;
@@ -45,12 +52,15 @@ ProfileReadiness g_readiness;
 std::uint32_t g_auto_expiry = 0;
 bool g_manual_call = false;
 std::uint32_t g_manual_seed = 0;
+std::uint32_t g_generator_attempts = 1;
 std::uintptr_t g_last_economy = 0;
 void* g_clear_stub = nullptr;
+RUNTIME_FUNCTION g_budget_function{};
+bool g_budget_unwind_registered = false;
 bool g_patched = false;
 std::array<unsigned char, 5> g_original_call{};
-struct GameVector { std::uintptr_t vtable; std::uintptr_t* data; std::uint64_t count; std::uint64_t capacity; };
-static_assert(sizeof(GameVector) == 32);
+std::array<unsigned char, 9> g_original_budget{};
+using GameVector = GameOfferVector;
 using ClearFn = void(__fastcall*)(GameVector*);
 std::unordered_map<std::uintptr_t, std::uintptr_t> g_offer_trailers;
 
@@ -67,44 +77,6 @@ std::wstring ModulePath(HMODULE module)
     if (!n || n >= path.size()) return {};
     path.resize(n);
     return path;
-}
-
-bool Sha256File(const std::wstring& path, std::wstring& result)
-{
-    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) return false;
-
-    BCRYPT_ALG_HANDLE algorithm = nullptr;
-    BCRYPT_HASH_HANDLE hash = nullptr;
-    DWORD object_size = 0, returned = 0, hash_size = 0;
-    std::vector<UCHAR> object;
-    std::array<UCHAR, 32> digest{};
-    bool ok = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) >= 0;
-    if (ok) ok = BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&object_size), sizeof(object_size), &returned, 0) >= 0;
-    if (ok) ok = BCryptGetProperty(algorithm, BCRYPT_HASH_LENGTH, reinterpret_cast<PUCHAR>(&hash_size), sizeof(hash_size), &returned, 0) >= 0 && hash_size == digest.size();
-    if (ok) {
-        object.resize(object_size);
-        ok = BCryptCreateHash(algorithm, &hash, object.data(), object_size, nullptr, 0, 0) >= 0;
-    }
-    std::array<UCHAR, 1 << 16> buffer{};
-    while (ok) {
-        DWORD read = 0;
-        if (!ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr)) { ok = false; break; }
-        if (!read) break;
-        ok = BCryptHashData(hash, buffer.data(), read, 0) >= 0;
-    }
-    if (ok) ok = BCryptFinishHash(hash, digest.data(), static_cast<ULONG>(digest.size()), 0) >= 0;
-    if (hash) BCryptDestroyHash(hash);
-    if (algorithm) BCryptCloseAlgorithmProvider(algorithm, 0);
-    CloseHandle(file);
-    if (!ok) return false;
-
-    constexpr wchar_t hex[] = L"0123456789ABCDEF";
-    result.clear();
-    result.reserve(digest.size() * 2);
-    for (UCHAR b : digest) { result.push_back(hex[b >> 4]); result.push_back(hex[b & 15]); }
-    return true;
 }
 
 bool WriteCode(void* address, const void* bytes, std::size_t length)
@@ -128,43 +100,70 @@ std::uintptr_t TrailerKey(std::uintptr_t economy)
     return ReadableMemory(owner, 0x50) ? *reinterpret_cast<std::uintptr_t*>(owner + 0x48) : 0;
 }
 
-void __fastcall KeepLiveOffers(GameVector* offers)
+void ReleaseOffers(GameVector& offers)
 {
-    const auto economy = *reinterpret_cast<std::uintptr_t*>(g_module_base + g_profile->economy);
-    if (!economy || offers->count > 100000) return;
+    reinterpret_cast<ClearFn>(g_module_base + g_profile->clear_vector)(&offers);
+}
+
+void MatchTrailer(GameVector& offers, std::uintptr_t economy)
+{
     const auto key = TrailerKey(economy);
-    const auto vector_key = reinterpret_cast<std::uintptr_t>(offers);
+    const auto vector_key = reinterpret_cast<std::uintptr_t>(&offers);
     const auto known = g_offer_trailers.find(vector_key);
     if (known != g_offer_trailers.end() && known->second != key) {
         // A changed trailer requires the game's normal invalidation of offers
         // for the old trailer; preservation applies within one trailer context.
-        reinterpret_cast<ClearFn>(g_module_base + g_profile->clear_vector)(offers);
+        ReleaseOffers(offers);
     }
     g_offer_trailers[vector_key] = key;
+}
+
+void __fastcall KeepLiveOffers(GameVector* offers)
+{
+    const auto economy = *reinterpret_cast<std::uintptr_t*>(g_module_base + g_profile->economy);
+    if (!economy || !ValidOfferVector(*offers)) return;
+    MatchTrailer(*offers, economy);
     const auto now = *reinterpret_cast<std::uint32_t*>(economy + 0x19c);
     if (g_auto_expiry <= now) g_auto_expiry = now + 48u * 60u;
     const auto company = reinterpret_cast<std::uintptr_t>(offers) - 0xA0;
     auto* timers = *reinterpret_cast<std::uint32_t**>(company + 0x48);
     const auto timer_count = *reinterpret_cast<std::uint64_t*>(company + 0x50);
     if (timers && timer_count <= 10000)
-        for (std::uint64_t n = 0; n < timer_count; ++n) timers[n] = g_auto_expiry;
-    if (g_manual_call && timers && timer_count) timers[0] = g_manual_seed;
-    std::vector<std::uintptr_t> expired;
-    std::uint64_t retained = 0;
-    for (std::uint64_t i = 0; i < offers->count; ++i) {
-        const auto job = offers->data[i];
-        if (job && *reinterpret_cast<std::uint32_t*>(job + 0x48) > now)
-            offers->data[retained++] = job;
-        else if (job) expired.push_back(job);
+        for (std::uint64_t n = 0; n < timer_count; ++n)
+            timers[n] = g_manual_call ? ManualTimerSeed(g_auto_expiry, g_manual_seed, static_cast<std::uint32_t>(n)) : g_auto_expiry;
+    RemoveExpiredOffers(*offers, now, ReleaseOffers);
+}
+
+void __fastcall GenerateAutomaticCargo(std::uintptr_t company, std::uintptr_t economy)
+{
+    if (!company || !economy) return;
+    auto& offers = *reinterpret_cast<GameVector*>(company + 0xA0);
+    if (!ValidOfferVector(offers)) return;
+    if (offers.count) MatchTrailer(offers, economy);
+    const auto now = *reinterpret_cast<const std::uint32_t*>(economy + 0x19c);
+    RefillEmptyOwnedOffers(offers, now, [&] {
+        g_original_generator(company, economy);
+    }, ReleaseOffers);
+}
+
+bool InstallAutomaticCargoHook()
+{
+    auto* target = reinterpret_cast<void*>(g_module_base + g_profile->generator);
+    if (MH_CreateHook(target, reinterpret_cast<void*>(&GenerateAutomaticCargo),
+                      reinterpret_cast<void**>(&g_original_generator)) != MH_OK) return false;
+    if (MH_EnableHook(target) != MH_OK) {
+        MH_RemoveHook(target);
+        g_original_generator = nullptr;
+        return false;
     }
-    for (std::uint64_t i = retained; i < offers->count; ++i) offers->data[i] = 0;
-    offers->count = retained;
-    // Use the game's own destructor/refcount path; the temporary container owns
-    // no allocation in the game and the helper only clears its element references.
-    if (!expired.empty()) {
-        GameVector removed{offers->vtable, expired.data(), expired.size(), expired.size()};
-        reinterpret_cast<ClearFn>(g_module_base + g_profile->clear_vector)(&removed);
-    }
+    return true;
+}
+
+void RemoveAutomaticCargoHook()
+{
+    if (!g_original_generator) return;
+    MH_RemoveHook(reinterpret_cast<void*>(g_module_base + g_profile->generator));
+    g_original_generator = nullptr;
 }
 
 bool PatchGeneratorBudget()
@@ -172,10 +171,14 @@ bool PatchGeneratorBudget()
     auto* branch = reinterpret_cast<unsigned char*>(g_module_base + g_profile->attempt_branch);
     auto* immediate = reinterpret_cast<unsigned char*>(g_module_base + g_profile->attempt_immediate);
     auto* call = reinterpret_cast<unsigned char*>(g_module_base + g_profile->clear_call);
+    auto* budget_instruction = reinterpret_cast<unsigned char*>(g_module_base + g_profile->attempt_branch + 2);
     const std::int32_t original_relative = static_cast<std::int32_t>((g_module_base + g_profile->clear_vector) - (g_module_base + (g_profile->clear_call + 5)));
     if (branch[0] != 0x73 || branch[1] != 0x0B ||
         *reinterpret_cast<std::uint32_t*>(immediate) != 4 || call[0] != 0xE8 ||
-        std::memcmp(call + 1, &original_relative, 4) != 0) return false;
+        std::memcmp(call + 1, &original_relative, 4) != 0 ||
+        g_profile->attempt_immediate != g_profile->attempt_branch + 7 ||
+        std::memcmp(budget_instruction, "\x48\xc7\x44\x24", 4) ||
+        (budget_instruction[4] != 0x70 && budget_instruction[4] != 0x78)) return false;
     for (std::uintptr_t offset = 0x4000000; offset < 0x70000000 && !g_clear_stub; offset += 0x10000)
         g_clear_stub = VirtualAlloc(reinterpret_cast<void*>(g_module_base + offset), 4096,
                                     MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
@@ -184,23 +187,38 @@ bool PatchGeneratorBudget()
     const auto bridge = reinterpret_cast<std::uintptr_t>(&KeepLiveOffers);
     std::memcpy(jump + 6, &bridge, 8);
     std::memcpy(g_clear_stub, jump, sizeof(jump));
+    auto* budget_stub = static_cast<unsigned char*>(g_clear_stub) + 32;
+    const auto stub_code = MakeAttemptBudgetStub(reinterpret_cast<std::uintptr_t>(&g_generator_attempts), budget_instruction[4]);
+    std::memcpy(budget_stub, stub_code.data(), stub_code.size());
+    std::memcpy(static_cast<unsigned char*>(g_clear_stub)+64, AttemptBudgetUnwindInfo.data(), AttemptBudgetUnwindInfo.size());
     DWORD old = 0;
     if (!VirtualProtect(g_clear_stub, 4096, PAGE_EXECUTE_READ, &old)) {
         VirtualFree(g_clear_stub, 0, MEM_RELEASE); g_clear_stub = nullptr; return false;
     }
-    FlushInstructionCache(GetCurrentProcess(), g_clear_stub, sizeof(jump));
+    FlushInstructionCache(GetCurrentProcess(), g_clear_stub, 32 + stub_code.size());
+    g_budget_function = {32, static_cast<DWORD>(32+stub_code.size()), 64};
+    if (!RtlAddFunctionTable(&g_budget_function, 1, reinterpret_cast<DWORD64>(g_clear_stub))) {
+        VirtualFree(g_clear_stub, 0, MEM_RELEASE); g_clear_stub = nullptr; return false;
+    }
+    g_budget_unwind_registered = true;
     std::memcpy(g_original_call.data(), call, 5);
+    std::memcpy(g_original_budget.data(), budget_instruction, g_original_budget.size());
     unsigned char replacement[5] = {0xE8};
     const auto relative = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(g_clear_stub) - reinterpret_cast<std::uintptr_t>(call + 5));
     std::memcpy(replacement + 1, &relative, 4);
     const unsigned char nops[2] = {0x90, 0x90};
-    const std::uint32_t one = 1;
+    std::array<unsigned char,9> budget_call{}; budget_call.fill(0x90); budget_call[0] = 0xe8;
+    const auto budget_relative = static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(budget_stub) - reinterpret_cast<std::uintptr_t>(budget_instruction + 5));
+    std::memcpy(budget_call.data()+1, &budget_relative, 4);
+    g_generator_attempts = 1;
     // Roll back all sites if any write fails.
-    if (!WriteCode(call, replacement, 5) || !WriteCode(branch, nops, 2) || !WriteCode(immediate, &one, 4)) {
+    if (!WriteCode(call, replacement, 5) || !WriteCode(branch, nops, 2) ||
+        !WriteCode(budget_instruction, budget_call.data(), budget_call.size())) {
         const unsigned char original_branch[2] = {0x73, 0x0B};
-        const std::uint32_t four = 4;
         WriteCode(call, g_original_call.data(), 5);
-        WriteCode(branch, original_branch, 2); WriteCode(immediate, &four, 4);
+        WriteCode(branch, original_branch, 2);
+        WriteCode(budget_instruction, g_original_budget.data(), g_original_budget.size());
+        RtlDeleteFunctionTable(&g_budget_function); g_budget_unwind_registered = false;
         VirtualFree(g_clear_stub, 0, MEM_RELEASE); g_clear_stub = nullptr;
         return false;
     }
@@ -212,33 +230,38 @@ void RestoreCode()
 {
     if (!g_patched) return;
     const unsigned char branch[2] = {0x73, 0x0B};
-    const std::uint32_t four = 4;
     WriteCode(reinterpret_cast<void*>(g_module_base + g_profile->clear_call), g_original_call.data(), 5);
     WriteCode(reinterpret_cast<void*>(g_module_base + g_profile->attempt_branch), branch, 2);
-    WriteCode(reinterpret_cast<void*>(g_module_base + g_profile->attempt_immediate), &four, 4);
+    WriteCode(reinterpret_cast<void*>(g_module_base + g_profile->attempt_branch + 2), g_original_budget.data(), g_original_budget.size());
+    g_generator_attempts = 1;
+    if (g_budget_unwind_registered) { RtlDeleteFunctionTable(&g_budget_function); g_budget_unwind_registered = false; }
     VirtualFree(g_clear_stub, 0, MEM_RELEASE); g_clear_stub = nullptr; g_patched = false;
 }
 bool InitializeProfile()
 {
     const auto exe = ModulePath(nullptr);
-    std::wstring actual_hash;
-    if (exe.empty() || !Sha256File(exe, actual_hash)) {
-        Log("Could not hash game executable; profile disabled.");
-        return false;
-    }
-    g_profile = FindGameProfile(actual_hash);
-    if (!g_profile) {
-        Log("unsupported game executable; profile disabled.");
-        std::string hash;
-        for (const auto digit : actual_hash) hash.push_back(static_cast<char>(digit));
-        Log(("Executable SHA-256: " + hash).c_str());
-        return false;
-    }
-
+    g_profile = nullptr;
+    if (exe.empty()) return false;
     g_module_base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
     if (!g_module_base) return false;
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(g_module_base);
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(g_module_base + dos->e_lfanew);
+    ExecutableVersion version{};
+    const bool version_read = ReadExecutableVersion(exe.c_str(), version);
+    if (version_read) {
+        char details[160];
+        sprintf_s(details, "%s executable version %u.%u.%u.%u.", g_game == GameKind::ATS ? "ATS" : "ETS2",
+                  version.major, version.minor, version.patch, version.build);
+        Log(details);
+    }
+    std::string reason;
+    if (!ResolveGameProfile(reinterpret_cast<const unsigned char*>(g_module_base),
+                            nt->OptionalHeader.SizeOfImage, g_game, g_resolved_profile, reason)) {
+        Log(("Compatibility check failed before patching: " + reason).c_str());
+        return false;
+    }
+    g_profile = &g_resolved_profile;
+    Log("Compatible instruction/flow and reference checks passed; executable version/hash do not gate compatibility.");
     if (!ValidateGameProfile(*g_profile, reinterpret_cast<const unsigned char*>(g_module_base),
                              nt->OptionalHeader.SizeOfImage)) {
         Log("game code signature mismatch; profile disabled before patching.");
@@ -251,32 +274,41 @@ bool InitializeProfile()
     const auto dll = ModulePath(g_plugin_module);
     if (dll.empty()) { RestoreCode(); return false; }
     g_plugin_dir = std::filesystem::path(dll).parent_path();
-    notifications::Initialize(g_plugin_dir);
+    notifications::Initialize(g_plugin_dir, g_game == GameKind::ATS);
     if (!overlay_ui::Initialize(g_plugin_dir, Log)) {
         RestoreCode();
         notifications::Shutdown();
         Log("Plugin disabled because the in-game interface could not be initialized.");
         return false;
     }
+    if (!InstallAutomaticCargoHook()) {
+        RestoreCode();
+        overlay_ui::Shutdown();
+        notifications::Shutdown();
+        Log("Could not install the automatic owned-cargo hook. Plugin disabled.");
+        return false;
+    }
     freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
-    Log((std::string(g_profile->name) + " profile active; Cargo Control ETS2 v0.7.2 experimental: control menu Ctrl+Alt+F9; action shortcuts disabled by default.").c_str());
+    Log((std::string(g_profile->name) + " profile active. Cargo Control v" CARGO_CONTROL_VERSION_TEXT
+         ". Control menu Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());
     return true;
 }
 
 void ResetSession()
 {
     g_limit.Reset();
+    g_auto_expiry = 0;
     freight::Reset();
     Log("session limit reset (telemetry timer restart / economy change).");
 }
 
-void RunGlobalPass(std::uintptr_t economy)
+void RefreshOwnedCargo(std::uintptr_t economy)
 {
     if (!g_enabled) return;
     if (!TrailerKey(economy)) {
         notifications::Show(notifications::Translate(L"TrailerRequired",
-            L"Select your owned trailer to add cargo offers. You can refresh Freight / Quick jobs without an owned truck.",
-            L"Для добавления грузов выберите собственный прицеп. Обновление рынка и заказов агентств доступно без своего грузовика."));
+            L"Select your owned trailer to refresh cargo offers. You can refresh Freight / Quick jobs without an owned truck.",
+            L"Для обновления грузов выберите собственный прицеп. Обновление рынка и заказов агентств доступно без своего грузовика."));
         return;
     }
     const auto real_now = GetTickCount64();
@@ -306,67 +338,81 @@ void RunGlobalPass(std::uintptr_t economy)
 
     const auto started = GetTickCount64();
     g_auto_expiry = deadline;
-    const auto generator = reinterpret_cast<GenerateFn>(g_module_base + g_profile->generator);
     const auto refill = reinterpret_cast<RefillFn>(g_module_base + g_profile->refill);
     const auto* companies = reinterpret_cast<const std::uintptr_t*>(array);
-    std::uint64_t added = 0, full = 0, eligible = 0;
-    notifications::Show(notifications::Translate(L"Generating", L"Cargo market: generating offers across all companies…", L"Биржа грузов: генерация заказов по всем компаниям…"));
-    Log("append pass started.");
+    std::uint64_t generated = 0, full = 0, eligible = 0, duplicate_offers = 0, excess_offers = 0, native_calls = 0;
+    std::uint64_t replaced = 0, peak_company = 0;
+    std::array<std::uint64_t,6> distribution{};
+    notifications::Show(notifications::Translate(L"Generating", L"Refreshing owned-trailer cargo offers…", L"Обновление грузов для собственного прицепа…"));
+    Log("Owned cargo replacement started.");
     for (std::uint64_t i = 0; i < count; ++i) {
         const auto company = companies[i];
         if (!company) continue;
         auto* offers = reinterpret_cast<GameVector*>(company + 0xA0);
-        KeepLiveOffers(offers);
-        const auto before = offers->count;
+        if (!ValidOfferVector(*offers)) continue;
         refill(company, economy);
         const auto timer_count = *reinterpret_cast<std::uint64_t*>(company + 0x50);
         auto* timers = *reinterpret_cast<std::uint32_t**>(company + 0x48);
-        if (!timer_count || !timers || timer_count > 10000) continue;
+        if (!timer_count || timer_count > 10000 ||
+            !ReadableMemory(reinterpret_cast<std::uintptr_t>(timers), timer_count * sizeof(*timers))) continue;
         ++eligible;
-        for (std::uint64_t n = 0; n < timer_count; ++n) timers[n] = deadline;
-        // Native generation rejects duplicate cargo/destination combinations.
-        // Bound retries for companies without enough valid combinations.
-        for (unsigned attempt = 0; attempt < 20 && offers->count < before + 5; ++attempt) {
+        replaced += offers->count;
+        const bool special_first_slot = *reinterpret_cast<std::uintptr_t*>(company + 0x108) != 0;
+        const auto cleaned = ReplaceOwnedOffers(*offers, timer_count, special_first_slot, [&](std::uint32_t budget, unsigned attempt) {
             const auto old_count = offers->count;
-            // The native RNG is seeded by the timer value. Reusing one expiry
-            // would generate the same candidate repeatedly; vary the seed and
-            // normalize the resulting offer timestamps immediately afterwards.
-            g_manual_seed = deadline + 1u + static_cast<std::uint32_t>(
+            // Slot zero can be a fixed special offer. Reach the later native slots
+            // with separate seeds, then normalize expiry and discard new duplicates.
+            g_manual_seed = static_cast<std::uint32_t>(
                 (real_now + i * 2654435761ULL + attempt * 2246822519ULL + g_limit.Used() * 3266489917ULL) % 1000000);
-            g_manual_call = true;
-            generator(company, economy);
-            g_manual_call = false;
-            timers[0] = deadline;
+            {
+                ManualGenerationScope manual(g_manual_call, g_generator_attempts, budget);
+                g_original_generator(company, economy);
+                ++native_calls;
+            }
+            for (std::uint64_t n = 0; n < timer_count; ++n) timers[n] = deadline;
             for (auto n = old_count; n < offers->count; ++n) {
                 const auto job = offers->data[n];
                 *reinterpret_cast<std::uint32_t*>(job + 0x48) = deadline;
                 *reinterpret_cast<std::uint32_t*>(job + 0x60) = deadline;
             }
-        }
-        const auto difference = offers->count - before;
-        added += difference;
-        if (difference == 5) ++full;
+        }, ReleaseOffers);
+        duplicate_offers += cleaned.duplicates;
+        excess_offers += cleaned.excess;
+        generated += offers->count;
+        peak_company = std::max(peak_company, offers->count);
+        if (offers->count == 5) ++full;
+        ++distribution[std::min<std::uint64_t>(offers->count, 5)];
     }
-    if (added) g_limit.RecordSuccess(game_now);
+    if (generated) g_limit.RecordSuccess(game_now);
     wchar_t message[512];
-    if (!added) {
+    if (!generated) {
         notifications::Show(notifications::Translate(L"NoOffers",
-            L"No orders could be added. Check your owned trailer and available cargo.\nThis generation slot was not consumed.",
-            L"Не удалось добавить заказы. Проверьте свой прицеп и наличие подходящих грузов.\nЗапуск не израсходован."));
+            L"No new offers were generated. Check your owned trailer and available cargo.\nThis refresh slot is still available.",
+            L"Новых грузов нет. Проверьте свой прицеп и доступные грузы.\nЗапуск обновления доступен."));
     } else {
         const auto format = notifications::Translate(L"Result",
-            L"Cargo market\nOrders added: %llu. Available runs: %u of 3.",
-            L"Биржа грузов\nДобавлено заказов: %llu. Доступно запусков: %u из 3.");
-        swprintf_s(message, format.c_str(), added, g_limit.RemainingUses());
+            L"Cargo market refreshed\nNew offers: %llu. Available runs: %u of 3.",
+            L"Биржа грузов обновлена\nНовых предложений: %llu. Доступно запусков: %u из 3.");
+        swprintf_s(message, format.c_str(), generated, g_limit.RemainingUses());
         std::wstring result = message;
+        wchar_t company_result[160];
+        const auto company_format = notifications::Translate(L"CompanyResult",
+            L"\nCompanies with five new offers: %llu of %llu.",
+            L"\nКомпаний с пятью новыми предложениями: %llu из %llu.");
+        swprintf_s(company_result, company_format.c_str(), full, eligible);
+        result += company_result;
         if (full < eligible) result += notifications::Translate(L"Partial",
-            L"\nSome companies do not have enough suitable cargo.",
-            L"\nНе во всех компаниях достаточно подходящих грузов.");
+            L"\nSome companies received fewer than five new offers.",
+            L"\nУ части компаний меньше пяти новых предложений.");
         notifications::Show(result);
     }    char log[256];
-    sprintf_s(log, "append pass finished: added=%llu, five_offers=%llu/%llu, remaining=%u, elapsed_ms=%llu.",
-        added, full, eligible, g_limit.RemainingUses(), GetTickCount64() - started);
+    sprintf_s(log, "Owned cargo replacement finished. Replaced=%llu, generated=%llu, peak_company=%llu, five_offers=%llu/%llu, remaining=%u, elapsed_ms=%llu.",
+        replaced, generated, peak_company, full, eligible, g_limit.RemainingUses(), GetTickCount64() - started);
     Log(log);
+    char details[320];
+    sprintf_s(details, "Owned cargo unique additions by company: zero=%llu, one=%llu, two=%llu, three=%llu, four=%llu, five=%llu; duplicates_removed=%llu, excess_removed=%llu, native_calls=%llu.",
+        distribution[0],distribution[1],distribution[2],distribution[3],distribution[4],distribution[5],duplicate_offers,excess_offers,native_calls);
+    Log(details);
 }
 
 void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
@@ -399,7 +445,7 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
             L"Profile data is not ready. Wait for loading to finish, then try again from the garage.",
             L"Данные профиля ещё не готовы. Дождитесь окончания загрузки и повторите действие в гараже."));
         Log("Manual request rejected: profile/economy is not ready.");
-    } else if (action == 1) RunGlobalPass(economy);
+    } else if (action == 1) RefreshOwnedCargo(economy);
     else if (action == 2 && g_enabled) freight::Request(economy);
 
 }
@@ -411,7 +457,9 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 {
     if (version != SCS_TELEMETRY_VERSION_1_01) return SCS_RESULT_unsupported;
     const auto* p = static_cast<const scs_telemetry_init_params_v101_t*>(params);
-    if (std::string(p->common.game_id) != SCS_GAME_ID_EUT2) return SCS_RESULT_unsupported;
+    if (!p->common.game_id) return SCS_RESULT_unsupported;
+    g_game = IdentifyGame(p->common.game_id);
+    if (g_game == GameKind::Unknown) return SCS_RESULT_unsupported;
     g_log = p->common.log;
     const auto* events = p->register_for_event;
     if (!events) return SCS_RESULT_generic_error;
@@ -426,6 +474,7 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 
 SCSAPI_VOID scs_telemetry_shutdown(void)
 {
+    RemoveAutomaticCargoHook();
     overlay_ui::Shutdown();
     freight::Shutdown();
     RestoreCode();

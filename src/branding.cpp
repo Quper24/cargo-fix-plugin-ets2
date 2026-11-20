@@ -74,7 +74,7 @@ void Paint(HDC dc, const RECT& bounds, const std::wstring& message) {
     HFONT heading = Font(16, FW_SEMIBOLD);
     const auto previous = SelectObject(dc, heading);
     RECT title{bounds.left + Left, bounds.top + 15, bounds.right - 20, bounds.top + 40};
-    DrawTextW(dc, L"CARGO CONTROL ETS2", -1, &title, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
+    DrawTextW(dc, L"CARGO CONTROL", -1, &title, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(dc, previous); DeleteObject(heading);
 
     HFONT body = Font(20, FW_NORMAL);

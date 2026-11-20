@@ -26,7 +26,7 @@ void Paint(HDC dc, bool ru) {
     RECT bounds{0,0,Width,Height}; HBRUSH bg=CreateSolidBrush(Background); FillRect(dc,&bounds,bg); DeleteObject(bg);
     const COLORREF white=RGB(244,247,245), muted=RGB(151,166,155), line=RGB(44,59,47);
     Text(dc,L"QUPER SIMULATOR",{32,25,670,48},14,FW_SEMIBOLD,Accent);
-    Text(dc,L"Cargo Control ETS2",{30,53,690,99},34,FW_SEMIBOLD,white);
+    Text(dc,L"Cargo Control",{30,53,690,99},34,FW_SEMIBOLD,white);
     Text(dc,ru?L"Ваш рынок грузов. Ваши правила.":L"Your cargo market. Your rules.",{32,107,680,136},17,FW_NORMAL,muted);
     branding::PaintLogo(dc,{710,23,842,120});
     Round(dc,{28,156,438,360},Surface,line); Round(dc,{462,156,872,360},Surface,line);
