@@ -20,12 +20,33 @@ struct CreateResult {
     Market market=Market::Freight;
     bool Success() const { return status==CreateStatus::Created || status==CreateStatus::AlreadyPresent; }
 };
+struct DestinationQuery {
+    std::uint64_t session=0;
+    Market market=Market::OwnedTrailer;
+    std::string origin,cargo;
+    bool operator==(const DestinationQuery& other) const {
+        return session==other.session && market==other.market && origin==other.origin && cargo==other.cargo;
+    }
+};
+struct DestinationOptions {
+    DestinationQuery query;
+    bool checked=false;
+    CreateStatus status=CreateStatus::NotReady;
+    std::vector<std::string> companies;
+    bool Matches(const DestinationQuery& value) const {return checked && query==value;}
+    bool Allows(const std::string& id) const {
+        return checked && status==CreateStatus::Created && std::find(companies.begin(),companies.end(),id)!=companies.end();
+    }
+};
 inline bool ValidSelection(const Catalog& catalog,const JobRequest& request) {
     if(request.origin.empty() || request.origin==request.destination || request.origin.size()>512 || request.destination.size()>512 || request.cargo.size()>512 ||
        (request.market!=Market::Freight && request.market!=Market::OwnedTrailer))return false;
     const Company *from=nullptr,*to=nullptr;
     for(const auto& company:catalog.companies){if(company.id==request.origin)from=&company;if(company.id==request.destination)to=&company;}
-    return from && to && std::find(from->outgoing.begin(),from->outgoing.end(),request.cargo)!=from->outgoing.end() && Accepts(*to,request.cargo);
+    const bool known_cargo=request.market==Market::OwnedTrailer?
+        std::any_of(catalog.cargos.begin(),catalog.cargos.end(),[&](const auto& cargo){return cargo.id==request.cargo;}):
+        from && std::find(from->outgoing.begin(),from->outgoing.end(),request.cargo)!=from->outgoing.end();
+    return from && to && known_cargo && Accepts(*to,request.cargo);
 }
 class RequestQueue {
 public:

@@ -57,7 +57,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if(market==1){
         const auto status=state->trailer_cargos.status;
         if(status==TrailerCargoStatus::Ready)
-            ImGui::TextDisabled("%s",tr("Only cargo compatible with your selected trailer is shown.","Показаны только грузы для выбранного собственного прицепа."));
+            ImGui::TextWrapped("%s",tr("Cargo is filtered for your trailer. The list is shared by all origin companies.","Грузы отфильтрованы по вашему прицепу. Список общий для всех баз отправления."));
         else if(status==TrailerCargoStatus::NoTrailer)
             ImGui::TextWrapped("%s",tr("Select an owned trailer in the game to see its cargo.","Выберите собственный прицеп в игре, чтобы увидеть подходящие грузы."));
         else
@@ -77,11 +77,15 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         return nullptr;
     };
     const auto* origin = find_company(origin_id);
-    if (!origin && !origin_id.empty()) { origin_id.clear(); cargo_id.clear(); destination_id.clear(); }
+    if (!origin && !origin_id.empty()) { origin_id.clear(); if(market==0)cargo_id.clear(); destination_id.clear(); }
+    auto receiver_allowed=[&](const Company& company){
+        if(company.id==origin_id || cargo_id.empty() || !Accepts(company,cargo_id))return false;
+        return market==0 || (state->destinations.Matches({state->session,Market::OwnedTrailer,origin_id,cargo_id}) && state->destinations.Allows(company.id));
+    };
     auto city_select = [&](const char* label, std::string& selected, bool destination) {
         std::map<std::string,std::string> cities;
         for (const auto& company : catalog.companies)
-            if (!destination || (!cargo_id.empty() && company.id != origin_id && Accepts(company, cargo_id)))
+            if (!destination || receiver_allowed(company))
                 cities.emplace(company.city,city_names[company.city]);
         std::vector<std::pair<std::string,std::string>> sorted(cities.begin(),cities.end());
         std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second==b.second?a.first<b.first:a.second<b.second;});
@@ -104,7 +108,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         if (ImGui::BeginCombo(label, company ? company->name.c_str() : tr("Select...", "Выберите..."))) {
             std::vector<const Company*> bases;
             for(const auto& base:catalog.companies)
-                if(base.city==city && visible(base.name) && (!destination || (!cargo_id.empty() && base.id!=origin_id && Accepts(base,cargo_id))))bases.push_back(&base);
+                if(base.city==city && visible(base.name) && (!destination || receiver_allowed(base)))bases.push_back(&base);
             std::sort(bases.begin(),bases.end(),[](const auto* a,const auto* b){return a->name==b->name?a->id<b->id:a->name<b->name;});
             for (const auto* item : bases) {
                 const auto& base=*item;
@@ -117,13 +121,13 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         return changed;
     };
     if (city_select(tr("Origin city", "Город отправления"), origin_city, false)) {
-        origin_id.clear(); cargo_id.clear(); destination_city.clear(); destination_id.clear();
+        origin_id.clear(); if(market==0)cargo_id.clear(); destination_city.clear(); destination_id.clear();
     }
     if (base_select(tr("Origin company", "База отправления"), origin_city, origin_id, false)) {
-        cargo_id.clear(); destination_city.clear(); destination_id.clear();
+        if(market==0)cargo_id.clear(); destination_city.clear(); destination_id.clear();
     }
     origin = find_company(origin_id);
-    const auto available=AvailableCargos(origin,market==1,state->trailer_cargos);
+    const auto available=AvailableCargos(catalog,origin,market==1,state->trailer_cargos);
     if (!cargo_id.empty() && std::find(available.begin(), available.end(), cargo_id) == available.end()) {
         cargo_id.clear(); destination_city.clear();destination_id.clear();
     }
@@ -140,23 +144,36 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         }
         ImGui::EndCombo();
     }
+    if(market==1 && !origin_id.empty() && !cargo_id.empty()){
+        const DestinationQuery query{state->session,Market::OwnedTrailer,origin_id,cargo_id};
+        QueueDestinations(query);
+        if(!state->destinations.Matches(query))ImGui::TextDisabled("%s",tr("Checking destinations for your trailer...","Проверяю направления для вашего прицепа..."));
+        else if(state->destinations.status!=CreateStatus::Created)
+            ImGui::TextWrapped("%s",CreationMessage({state->destinations.status,Market::OwnedTrailer},russian).c_str());
+        else if(state->destinations.companies.empty())
+            ImGui::TextWrapped("%s",tr("The game found no destinations for this cargo and trailer from this company. Choose another origin or cargo.",
+                "Игра не нашла направлений для этого груза и прицепа с выбранной базы. Выберите другую базу отправления или груз."));
+    }
     if (city_select(tr("Destination city", "Город назначения"), destination_city, true)) destination_id.clear();
     base_select(tr("Destination company", "База назначения"), destination_city, destination_id, true);
     const auto* destination = find_company(destination_id);
-    if (destination && !Accepts(*destination, cargo_id)) destination_id.clear();
+    if(destination && (!Accepts(*destination,cargo_id) || (market==1 && state->destinations.Matches({state->session,Market::OwnedTrailer,origin_id,cargo_id}) && !state->destinations.Allows(destination_id)))){
+        destination_city.clear();destination_id.clear();
+    }
     if(market==0)ImGui::Checkbox(tr("Allow replacing one source-company offer","Разрешить замену одного предложения на базе отправления"),&allow_replace);
     ImGui::TextWrapped("%s",tr("The game checks the cargo, route and trailer. Accept the created offer from its market.",
                               "Игра проверит груз, направление и прицеп. Готовое предложение можно принять на соответствующем рынке."));
     if(!state->creation_supported)ImGui::TextDisabled("%s",tr("Native job creation is unavailable for this game code.","Создание заказа недоступно для этого кода игры."));
     JobRequest request{state->session,market==1?Market::OwnedTrailer:Market::Freight,origin_id,cargo_id,destination_id,allow_replace};
-    ImGui::BeginDisabled(!state->creation_supported || !ValidSelection(catalog,request));
+    const bool destination_ready=market==0 || (state->destinations.Matches({state->session,Market::OwnedTrailer,origin_id,cargo_id}) && state->destinations.Allows(destination_id));
+    ImGui::BeginDisabled(!state->creation_supported || !ValidSelection(catalog,request) || !destination_ready);
     if(ImGui::Button(tr("Create job", "Создать заказ"))){
         if(QueueCreation(request)){request_error.clear();create();}
         else request_error=tr("Request not queued. Read the session and try again.","Запрос не поставлен в очередь. Считайте сессию и повторите действие.");
     }
     ImGui::EndDisabled();
     if(market==1 && origin && available.empty() && state->trailer_cargos.status==TrailerCargoStatus::Ready)
-        ImGui::TextWrapped("%s",tr("This company has no cargo compatible with your trailer.","На этой базе нет грузов для вашего прицепа."));
+        ImGui::TextWrapped("%s",tr("No cargo compatible with your trailer was found in the loaded session.","В загруженной сессии не найдено грузов для вашего прицепа."));
     if(!request_error.empty())ImGui::TextWrapped("%s",request_error.c_str());
     if(state->has_creation_result)ImGui::TextWrapped("%s",CreationMessage(state->creation_result,russian).c_str());
 }

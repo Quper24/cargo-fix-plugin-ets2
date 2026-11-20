@@ -17,6 +17,41 @@ struct Fixture {
 constexpr Fixture fixtures[] = {
 #include "custom_job_profiles.inc"
 };
+// Execute the validated candidate body from each real EXE with isolated inputs.
+// Its sole external call (skill eligibility) is replaced by a true-return stub;
+// trailer/body/load checks and borrowed-vector appends execute unchanged.
+void CheckOwnedProbe(const std::vector<unsigned char>& image,const CreationCode& creation){
+    using namespace custom_jobs;
+    constexpr std::size_t length=0x191,call=0x93,stub=0x300;
+    Check(creation.owned_candidates+length<image.size());
+    auto* native=static_cast<unsigned char*>(VirtualAlloc(nullptr,4096,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));Check(native);
+    std::memcpy(native,image.data()+creation.owned_candidates,length);
+    Check(native[call]==0xe8 && native[length-1]==0xc3);
+    const auto relative=static_cast<std::int32_t>(stub-call-5);
+    std::memcpy(native+call+1,&relative,4);native[stub]=0xb0;native[stub+1]=1;native[stub+2]=0xc3;
+    DWORD protection=0;Check(VirtualProtect(native,4096,PAGE_EXECUTE_READ,&protection));
+    FlushInstructionCache(GetCurrentProcess(),native,4096);
+    alignas(8) std::array<unsigned char,0xc0> cargo{},trailer{};
+    auto put=[](auto& bytes,std::size_t offset,const auto& value){std::memcpy(bytes.data()+offset,&value,sizeof(value));};
+    const std::uint64_t body=11,one=1;
+    put(cargo,0x68,1.f);put(cargo,0x98,1.f);
+    put(cargo,0xa8,reinterpret_cast<std::uintptr_t>(&body));put(cargo,0xb0,one);
+    put(trailer,0x48,body);put(trailer,0x40,100.f);put(trailer,0x30,100.f);
+    std::uintptr_t input=reinterpret_cast<std::uintptr_t>(cargo.data()),output=0;
+    OwnedCargoProbe probe(&input,1);
+    struct Vector {std::uintptr_t vtable=0;std::uintptr_t* data;std::uint64_t count=0,capacity=1;} values{0,&output,0,1};
+    using Collect=std::uint64_t(__fastcall*)(std::uintptr_t,Vector*,std::uintptr_t,std::uintptr_t);
+    const auto collect=reinterpret_cast<Collect>(native);
+    const auto trailer_address=reinterpret_cast<std::uintptr_t>(trailer.data());
+    Check(collect(probe.Address(),&values,0,trailer_address)==1 && values.count==1 && output==input);
+    values.count=0;output=0;put(trailer,0x48,std::uint64_t{22});
+    Check(collect(probe.Address(),&values,0,trailer_address)==0 && !values.count && !output);
+    put(trailer,0x48,body);put(trailer,0x40,0.f);
+    Check(collect(probe.Address(),&values,0,trailer_address)==0 && !values.count);
+    put(trailer,0x40,100.f);probe.definition.flags=0;
+    Check(collect(probe.Address(),&values,0,trailer_address)==0 && !values.count);
+    Check(VirtualFree(native,0,MEM_RELEASE));
+}
 int wmain(int argc, wchar_t** argv) {
     Check(argc==2);
     const std::filesystem::path path(argv[1]);
@@ -45,6 +80,7 @@ int wmain(int argc, wchar_t** argv) {
     CreationCode creation;
     if(!ResolveCreationCode(image.data(),image.size(),core,creation,error))std::fprintf(stderr,"Creation resolver: %s\n",error.c_str());
     Check(creation.base_slot && creation.base_factory && creation.owned_candidates && creation.free_event_node && creation.physical_update);
+    CheckOwnedProbe(image,creation);
     image[creation.destinations]^=1;
     CreationCode rejected;
     Check(!ResolveCreationCode(image.data(),image.size(),core,rejected,error) && !rejected.base_slot);

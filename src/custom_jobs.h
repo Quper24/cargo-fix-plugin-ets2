@@ -19,6 +19,7 @@ struct View {
     Availability availability = Availability::UnsupportedCode;
     Catalog catalog;
     TrailerCargos trailer_cargos;
+    DestinationOptions destinations;
     std::string error;
 };
 using Logger = void(*)(const char*);
@@ -27,6 +28,7 @@ void Reset();
 void Observe(std::uintptr_t economy, bool ready);
 void Scan(std::uintptr_t economy);
 void RefreshTrailerCargos();
+void QueueDestinations(const DestinationQuery& query);
 void EnableCreation(const GameProfile& core,const CreationCode& code,creation::Backend backend);
 bool QueueCreation(const JobRequest& request);
 void CancelCreation();

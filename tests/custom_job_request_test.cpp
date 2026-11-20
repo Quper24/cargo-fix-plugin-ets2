@@ -27,6 +27,8 @@ int main(){
     catalog.companies={{"company.volatile.a.x","x","Coca-Cola",{"cargo.salt"},{}},
                        {"company.volatile.b.y","y","FedEx",{},{"cargo.salt"}},
                        {"company.volatile.c.y","y","FedEx",{},{"cargo.other"}}};
+    catalog.cargos={{"cargo.salt","Salt"},{"cargo.mod_tank","Mod cargo"}};
+    catalog.companies[1].incoming.push_back("cargo.mod_tank");
     JobRequest request{7,Market::Freight,"company.volatile.a.x","cargo.salt","company.volatile.b.y",false};
     Check(ValidSelection(catalog,request));
     auto wrong=request;wrong.destination="FedEx";Check(!ValidSelection(catalog,wrong));
@@ -34,21 +36,38 @@ int main(){
     wrong=request;wrong.destination=wrong.origin;Check(!ValidSelection(catalog,wrong));
     wrong=request;wrong.cargo="Salt";Check(!ValidSelection(catalog,wrong));
     request.market=Market::OwnedTrailer;Check(ValidSelection(catalog,request));
+    auto foreign=request;foreign.cargo="cargo.mod_tank";
+    Check(ValidSelection(catalog,foreign)); // Owned cargo is independent of the source's outgoing list.
+    foreign.market=Market::Freight;Check(!ValidSelection(catalog,foreign));
     TrailerCargos trailer;
-    Check(AvailableCargos(&catalog.companies[0],false,trailer).size()==1);
-    Check(AvailableCargos(&catalog.companies[0],true,trailer).empty());
+    Check(AvailableCargos(catalog,&catalog.companies[0],false,trailer).size()==1);
+    Check(AvailableCargos(catalog,&catalog.companies[0],true,trailer).empty());
     trailer.status=TrailerCargoStatus::Ready;
-    trailer.companies[request.origin]={"cargo.salt","cargo.mod_tank"};
-    Check(AvailableCargos(&catalog.companies[0],true,trailer)==std::vector<std::string>{"cargo.salt"});
-    Check(AvailableCargos(&catalog.companies[1],true,trailer).empty());
-    trailer.companies[request.origin]={"cargo.mod_tank"}; // A changed trailer invalidates the old selection.
-    Check(!trailer.Allows(request.origin,request.cargo));
-    Check(AvailableCargos(&catalog.companies[0],true,trailer).empty());
+    trailer.cargos={"cargo.salt","cargo.mod_tank"};
+    const auto global=AvailableCargos(catalog,&catalog.companies[0],true,trailer);
+    Check(global.size()==2);
+    Check(global==AvailableCargos(catalog,&catalog.companies[1],true,trailer));
+    Check(global==AvailableCargos(catalog,nullptr,true,trailer));
+    trailer.cargos={"cargo.mod_tank"};
+    Check(!trailer.Allows(request.cargo));
+    Check(AvailableCargos(catalog,&catalog.companies[0],true,trailer)==std::vector<std::string>{"cargo.mod_tank"});
     trailer.status=TrailerCargoStatus::NoTrailer;
-    Check(AvailableCargos(&catalog.companies[0],true,trailer).empty());
-    Check(AvailableCargos(&catalog.companies[0],false,trailer).size()==1);
-    trailer.status=TrailerCargoStatus::Failed;Check(!trailer.Allows(request.origin,"cargo.mod_tank"));
-    Check(AvailableCargos(nullptr,true,trailer).empty());
+    Check(AvailableCargos(catalog,&catalog.companies[0],true,trailer).empty());
+    Check(AvailableCargos(catalog,&catalog.companies[0],false,trailer).size()==1);
+    trailer.status=TrailerCargoStatus::Failed;Check(!trailer.Allows("cargo.mod_tank"));
+    std::uintptr_t inputs[]={11,22};OwnedCargoProbe probe(inputs,2);
+    const auto* context=probe.company.definition;
+    Check(context==&probe.definition && context->flags==0x80000000u && context->data==inputs && context->count==2);
+    DestinationQuery query{7,Market::OwnedTrailer,request.origin,request.cargo};
+    DestinationOptions options;options.query=query;options.companies={request.destination};
+    Check(!options.Matches(query)&&!options.Allows(request.destination));
+    options.checked=true;options.status=CreateStatus::Created;
+    Check(options.Matches(query)&&options.Allows(request.destination));
+    Check(!options.Allows("company.volatile.c.y"));
+    auto stale=query;++stale.session;Check(!options.Matches(stale));
+    stale=query;stale.cargo="cargo.mod_tank";Check(!options.Matches(stale));
+    stale=query;stale.origin="company.volatile.c.y";Check(!options.Matches(stale));
+    options.status=CreateStatus::InvalidGameData;Check(!options.Allows(request.destination));
     RequestQueue queue;Check(queue.Push(request));Check(!queue.Push(wrong));
     Check(queue.Take()->destination==request.destination);Check(!queue.Take());
     Check(queue.Push(request));queue.Clear();Check(!queue.Take());

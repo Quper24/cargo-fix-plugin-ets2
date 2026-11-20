@@ -19,6 +19,7 @@ Availability availability = Availability::UnsupportedCode;
 CatalogNameCode name_code{};
 bool creation_supported=false;
 RequestQueue creation_queue;
+std::optional<DestinationQuery> destination_queue;
 std::uintptr_t last_trailer=UINTPTR_MAX;
 std::atomic<bool> refresh_trailer{false};
 bool Memory(std::uintptr_t address, void* bytes, std::size_t length) {
@@ -29,12 +30,13 @@ void Publish(std::shared_ptr<View> next) {
     std::lock_guard<std::mutex> lock(mutex); view = std::move(next);
 }
 void UpdateTrailerCargos(View& next,std::uintptr_t economy){
+    next.destinations={};
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     const auto started=GetTickCount64();
     next.trailer_cargos=creation::ReadTrailerCargos(economy,pools,next.catalog);
     last_trailer=creation::TrailerIdentity(economy);
     if(log)log(("Owned-trailer cargo filter: status="+std::to_string(static_cast<int>(next.trailer_cargos.status))+
-        ", companies="+std::to_string(next.trailer_cargos.companies.size())+", elapsed_ms="+std::to_string(GetTickCount64()-started)+".").c_str());
+        ", cargos="+std::to_string(next.trailer_cargos.cargos.size())+", elapsed_ms="+std::to_string(GetTickCount64()-started)+".").c_str());
 #else
     (void)next;(void)economy;
 #endif
@@ -66,7 +68,7 @@ void Reset() {
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
     next->creation_supported = creation_supported;
-    std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();view=std::move(next);
+    std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();destination_queue.reset();view=std::move(next);
 }
 void Observe(std::uintptr_t economy, bool ready) {
     if (was_ready && (!ready || economy != last_economy)) Reset();
@@ -77,10 +79,23 @@ void Observe(std::uintptr_t economy, bool ready) {
         if(current->scanned && (refresh_trailer.exchange(false) || creation::TrailerIdentity(economy)!=last_trailer)){
             auto next=std::make_shared<View>(*current);UpdateTrailerCargos(*next,economy);Publish(std::move(next));
         }
+        std::optional<DestinationQuery> query;
+        {std::lock_guard<std::mutex> lock(mutex);query=std::move(destination_queue);destination_queue.reset();}
+        const auto latest=Snapshot();
+        if(query && latest->scanned && query->session==latest->session && latest->trailer_cargos.Allows(query->cargo)){
+            auto next=std::make_shared<View>(*latest);next->destinations=creation::ReadDestinations(economy,pools,*query);Publish(std::move(next));
+        }
     }
 #endif
 }
 void RefreshTrailerCargos(){refresh_trailer=true;}
+void QueueDestinations(const DestinationQuery& query){
+    std::lock_guard<std::mutex> lock(mutex);
+    if(!view->scanned || query.session!=view->session || query.market!=Market::OwnedTrailer ||
+       !view->trailer_cargos.Allows(query.cargo) || view->destinations.Matches(query) || (destination_queue && *destination_queue==query))return;
+    if(std::none_of(view->catalog.companies.begin(),view->catalog.companies.end(),[&](const auto& company){return company.id==query.origin;}))return;
+    destination_queue=query;
+}
 void Scan(std::uintptr_t economy) {
     if (last_economy && last_economy != economy) Reset();
     last_economy = economy;
@@ -150,7 +165,8 @@ void EnableCreation(const GameProfile& core,const CreationCode& code,creation::B
 bool QueueCreation(const JobRequest& request){
     std::lock_guard<std::mutex> lock(mutex);
     return view->creation_supported && view->scanned && request.session==view->session && ValidSelection(view->catalog,request) &&
-        (request.market!=Market::OwnedTrailer || view->trailer_cargos.Allows(request.origin,request.cargo)) && creation_queue.Push(request);
+        (request.market!=Market::OwnedTrailer || (view->trailer_cargos.Allows(request.cargo) &&
+            view->destinations.Matches({request.session,request.market,request.origin,request.cargo}) && view->destinations.Allows(request.destination))) && creation_queue.Push(request);
 }
 void CancelCreation(){std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();}
 CreateResult ExecuteCreation(std::uintptr_t economy){
