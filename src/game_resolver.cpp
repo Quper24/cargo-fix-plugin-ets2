@@ -20,6 +20,9 @@ namespace code161 {
 namespace code162 {
 #include "game_signatures_162.inc"
 }
+namespace catalog162 {
+#include "custom_job_signatures_162.inc"
+}
 struct SignatureSet {
     const char* name;
     const char* ets2_name;
@@ -171,6 +174,45 @@ void Guard(GameProfile& profile, unsigned index, const Image& image, std::uint32
 
 GameKind IdentifyGame(std::string_view id) {
     return id == "eut2" ? GameKind::ETS2 : id == "ats" ? GameKind::ATS : GameKind::Unknown;
+}
+
+bool ResolveCatalogPools(const unsigned char* bytes, std::size_t size,
+                         std::uint32_t& pools_rva, std::string& reason) {
+    pools_rva = 0; reason.clear();
+    Image image{bytes, size};
+    if (!image.Parse()) { reason = "invalid PE image"; return false; }
+    std::array<std::uint32_t, std::size(catalog162::signatures)> resolved{};
+    std::vector<Reference> references, current;
+    for (std::size_t n = 0; n < resolved.size(); ++n) {
+        const auto& signature = catalog162::signatures[n];
+        const auto& first = signature.instructions[0];
+        unsigned matches = 0;
+        for (const auto candidate : image.starts) {
+            if (!image.Code(candidate, first.size) || std::memcmp(bytes + candidate, first.bytes, first.size)) continue;
+            if (Match(image, signature, candidate, false, current)) {
+                resolved[n] = candidate; references.insert(references.end(), current.begin(), current.end());
+                if (++matches > 1) break;
+            }
+        }
+        if (matches != 1) {
+            reason = std::string(matches ? "ambiguous catalog signature: " : "incompatible catalog signature: ") + signature.name;
+            return false;
+        }
+    }
+    std::vector<std::uint32_t> symbols(catalog162::symbol_count, 0);
+    for (const auto& ref : references) {
+        if ((ref.callee >= 0 && ref.address != resolved[ref.callee]) ||
+            (ref.symbol >= 0 && symbols[ref.symbol] && symbols[ref.symbol] != ref.address)) {
+            reason = "inconsistent catalog reference graph"; return false;
+        }
+        if (ref.symbol >= 0) symbols[ref.symbol] = ref.address;
+    }
+    const auto pools = symbols[catalog162::pools_symbol];
+    if (!pools || pools % 8 || !image.In(pools, 2048 * sizeof(std::uintptr_t),
+                                       IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE, IMAGE_SCN_MEM_EXECUTE)) {
+        reason = "invalid catalog token pools"; return false;
+    }
+    pools_rva = pools; return true;
 }
 bool ReadExecutableVersion(const wchar_t* path, ExecutableVersion& out) {
     out = {};

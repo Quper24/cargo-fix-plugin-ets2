@@ -25,13 +25,8 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if (!state->supported) {
         ImGui::TextWrapped("%s", tr("Session catalog is unavailable for this game build.",
                                   "Для этой сборки игры чтение каталога пока недоступно."));
-        const char* reason = state->availability == Availability::UnreadableExe ?
-            tr("Could not read the game EXE.","Не удалось прочитать EXE игры.") :
-            state->availability == Availability::CoreMismatch ?
-            tr("Core function addresses differ from the catalog profile.","Адреса функций отличаются от профиля каталога.") :
-            state->availability == Availability::CodeMismatch ?
-            tr("The token pool code check failed.","Проверка кода доступа к данным не пройдена.") :
-            tr("No verified catalog profile for this EXE. See game.log.txt.","Для этого EXE нет проверенного профиля каталога. Подробности в game.log.txt.");
+        const char* reason = tr("The catalog code or data references differ. See game.log.txt.",
+                               "Код чтения или связи данных отличаются. Подробности в game.log.txt.");
         ImGui::TextWrapped("%s",reason);
         return;
     }

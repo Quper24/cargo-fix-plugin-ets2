@@ -4,7 +4,7 @@
 #define Check(value) do { if (!(value)) { std::fprintf(stderr,"Session check failed: %d\n",__LINE__); std::exit(1); } } while(0)
 int main() {
     using namespace custom_jobs;
-    Initialize(0, GameProfile{}, {}, nullptr);
+    Initialize(0, 0, nullptr);
     const auto first = Snapshot();
     Check(!first->supported && !first->scanned && first->catalog.companies.empty());
     Observe(100,true); Observe(100,true);

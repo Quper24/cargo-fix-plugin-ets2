@@ -6,7 +6,17 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <array>
+#include <cstring>
 #define Check(value) do { if (!(value)) { std::fprintf(stderr,"Catalog profile check failed: %d\n",__LINE__); std::exit(1); } } while(0)
+struct Fixture {
+    const char* name; const char* sha256;
+    std::uint32_t generator, fill, pools, guard_rva;
+    std::array<unsigned char,7> guard;
+};
+constexpr Fixture fixtures[] = {
+#include "custom_job_profiles.inc"
+};
 int wmain(int argc, wchar_t** argv) {
     Check(argc==2);
     const std::filesystem::path path(argv[1]);
@@ -25,21 +35,69 @@ int wmain(int argc, wchar_t** argv) {
         Check(std::uint64_t(s.VirtualAddress)+s.SizeOfRawData<=image.size());
         std::copy_n(raw.data()+s.PointerToRawData,s.SizeOfRawData,image.data()+s.VirtualAddress);
     }
-    GameProfile profile{}; std::string error;
-    const auto kind=path.filename()==L"amtrucks.exe"?GameKind::ATS:GameKind::ETS2;
-    Check(ResolveGameProfile(image.data(),image.size(),kind,profile,error));
-    const auto base=reinterpret_cast<std::uintptr_t>(image.data());
-    custom_jobs::Initialize(base,profile,path,nullptr);
+    const Fixture* fixture=nullptr;
+    for(const auto& item:fixtures) if(path.parent_path().filename()==item.name)fixture=&item;
+    Check(fixture);
+    std::uint32_t pools=0; std::string error;
+    Check(ResolveCatalogPools(image.data(),image.size(),pools,error) && pools==fixture->pools);
+    custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(image.data()),image.size(),nullptr);
     Check(custom_jobs::Snapshot()->supported);
     Check(custom_jobs::Snapshot()->availability==custom_jobs::Availability::Ready);
     custom_jobs::Observe(1,true); custom_jobs::Observe(1,false);
     Check(custom_jobs::Snapshot()->supported && !custom_jobs::Snapshot()->scanned);
-    auto incompatible=profile; ++incompatible.generator;
-    custom_jobs::Initialize(base,incompatible,path,nullptr);
-    Check(!custom_jobs::Snapshot()->supported && custom_jobs::Snapshot()->availability==custom_jobs::Availability::CoreMismatch);
-    std::fill(image.begin(),image.end(),0); // The on-disk hash still matches; the live code must be checked too.
-    custom_jobs::Initialize(base,profile,path,nullptr);
-    Check(!custom_jobs::Snapshot()->supported && custom_jobs::Snapshot()->availability==custom_jobs::Availability::CodeMismatch);
+    auto* mapped_nt=reinterpret_cast<IMAGE_NT_HEADERS64*>(image.data()+dos->e_lfanew);
+    mapped_nt->FileHeader.TimeDateStamp ^= 0x12345678;
+    // Change actual patch/build version resource fields. Neither metadata nor hash gates the catalog.
+    bool changed=false;
+    for(unsigned n=0;n<nt->FileHeader.NumberOfSections;++n) {
+        const auto& s=sections[n];
+        if(std::memcmp(s.Name,".rsrc",5))continue;
+        for(std::uint64_t at=s.VirtualAddress;at+sizeof(VS_FIXEDFILEINFO)<=std::uint64_t(s.VirtualAddress)+s.Misc.VirtualSize;++at) {
+            VS_FIXEDFILEINFO version{}; std::memcpy(&version,image.data()+at,sizeof(version));
+            if(version.dwSignature!=0xfeef04bd)continue;
+            version.dwFileVersionLS=0x7fff1234; version.dwProductVersionLS=0x7fff1234;
+            std::memcpy(image.data()+at,&version,sizeof(version)); changed=true; break;
+        }
+    }
+    Check(changed && ResolveCatalogPools(image.data(),image.size(),pools,error));
+    custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(image.data()),image.size(),nullptr);
+    Check(custom_jobs::Snapshot()->supported);
+    // A synthetic compatible update moves every function/global to a new RVA.
+    constexpr DWORD shift=0x10000;
+    std::vector<unsigned char> moved(image.size()+shift);
+    std::copy_n(image.data(),nt->OptionalHeader.SizeOfHeaders,moved.data());
+    auto* moved_nt=reinterpret_cast<IMAGE_NT_HEADERS64*>(moved.data()+dos->e_lfanew);
+    auto* moved_sections=IMAGE_FIRST_SECTION(moved_nt);
+    for(unsigned n=0;n<nt->FileHeader.NumberOfSections;++n) {
+        const auto& s=sections[n];
+        std::copy_n(image.data()+s.VirtualAddress,std::max(s.Misc.VirtualSize,s.SizeOfRawData),moved.data()+s.VirtualAddress+shift);
+        moved_sections[n].VirtualAddress+=shift;
+    }
+    moved_nt->OptionalHeader.SizeOfImage+=shift;
+    auto& directory=moved_nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+    directory.VirtualAddress+=shift;
+    auto* functions=reinterpret_cast<RUNTIME_FUNCTION*>(moved.data()+directory.VirtualAddress);
+    for(unsigned n=0;n<directory.Size/sizeof(*functions);++n) {
+        functions[n].BeginAddress+=shift; functions[n].EndAddress+=shift; functions[n].UnwindData+=shift;
+    }
+    Check(ResolveCatalogPools(moved.data(),moved.size(),pools,error) && pools==fixture->pools+shift);
+    custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(moved.data()),moved.size(),nullptr);
+    Check(custom_jobs::Snapshot()->supported);
+    image[fixture->guard_rva]^=1;
+    custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(image.data()),image.size(),nullptr);
+    Check(!custom_jobs::Snapshot()->supported && !custom_jobs::Snapshot()->scanned);
+    image[fixture->guard_rva]^=1;
+    // A changed field offset and a changed internal branch must fail too, not just the entry bytes.
+    for(const auto address : {fixture->guard_rva+0x15, fixture->guard_rva-0x74}) {
+        image[address]^=1;
+        Check(!ResolveCatalogPools(image.data(),image.size(),pools,error) && pools==0);
+        image[address]^=1;
+    }
+    std::int32_t displacement=0;
+    std::memcpy(&displacement,image.data()+fixture->guard_rva+3,sizeof(displacement)); ++displacement;
+    std::memcpy(image.data()+fixture->guard_rva+3,&displacement,sizeof(displacement));
+    Check(!ResolveCatalogPools(image.data(),image.size(),pools,error));
+    Check(!ResolveCatalogPools(image.data(),image.size()-1,pools,error));
     custom_jobs::Shutdown();
-    std::puts("Catalog profile: exact EXE accepted, readiness reset preserved support, wrong core and modified live code rejected.");
+    std::puts("Catalog code: patch/build metadata and relocated RVAs accepted; modified instructions, invalid pool references and truncation rejected.");
 }

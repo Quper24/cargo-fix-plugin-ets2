@@ -12,3 +12,7 @@ bool ReadExecutableVersion(const wchar_t* path, ExecutableVersion& out);
 // The file version and hash are deliberately not inputs to compatibility selection.
 bool ResolveGameProfile(const unsigned char* image, std::size_t size, GameKind game,
                         GameProfile& out, std::string& reason);
+// Read-only session catalog: resolve the token pools by checked code/flow,
+// independently of executable hashes and patch/build version numbers.
+bool ResolveCatalogPools(const unsigned char* image, std::size_t size,
+                         std::uint32_t& pools_rva, std::string& reason);

@@ -5,18 +5,17 @@
 #include <memory>
 
 namespace custom_jobs {
-enum class Availability { UnsupportedExe, UnreadableExe, CoreMismatch, CodeMismatch, Ready };
+enum class Availability { UnsupportedCode, Ready };
 struct View {
     std::uint64_t session = 0;
     bool supported = false;
     bool scanned = false;
-    Availability availability = Availability::UnsupportedExe;
+    Availability availability = Availability::UnsupportedCode;
     Catalog catalog;
     std::string error;
 };
 using Logger = void(*)(const char*);
-void Initialize(std::uintptr_t module, const GameProfile& profile,
-                const std::filesystem::path& executable, Logger logger);
+void Initialize(std::uintptr_t module, std::size_t image_size, Logger logger);
 void Reset();
 void Observe(std::uintptr_t economy, bool ready);
 void Scan(std::uintptr_t economy);

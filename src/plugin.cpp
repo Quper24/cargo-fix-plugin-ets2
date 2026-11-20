@@ -293,7 +293,7 @@ bool InitializeProfile()
     }
     freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
-    custom_jobs::Initialize(g_module_base, *g_profile, exe, Log);
+    custom_jobs::Initialize(g_module_base, nt->OptionalHeader.SizeOfImage, Log);
 #endif
     Log((std::string(g_profile->name) + " profile active. Cargo Control v" CARGO_CONTROL_VERSION_TEXT
          ". Control menu Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());
