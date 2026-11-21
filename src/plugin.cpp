@@ -22,6 +22,9 @@
 #include "owned_offers.h"
 #include "frame_batch.h"
 #include "plugin_version.h"
+#ifdef CARGO_CONTROL_ROAD_TRIP
+#include "road_trip.h"
+#endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs.h"
 #endif
@@ -319,6 +322,9 @@ bool InitializeProfile()
     custom_jobs::Initialize(g_module_base, nt->OptionalHeader.SizeOfImage, Log);
     custom_jobs::EnableCreation(*g_profile,g_creation_code,{PrepareSpecificOwned,GenerateSpecificOwned});
 #endif
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    road_trip::Initialize(g_module_base,nt->OptionalHeader.SizeOfImage,g_game,*g_profile,g_creation_code,Log);
+#endif
     Log((std::string(g_profile->name) + " profile active. Cargo Control v" CARGO_CONTROL_VERSION_TEXT
          ". Control menu Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());
     return true;
@@ -329,6 +335,9 @@ bool OwnedRefreshBusy();
 void ResetSession()
 {
     overlay_ui::CancelPending();CancelOwnedRefresh();
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    road_trip::Reset();
+#endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Reset();
 #endif
@@ -512,6 +521,14 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     g_last_economy = economy;
     notifications::Tick();
     const bool ready = g_readiness.Observe(snapshot, valid, restarted);
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    const bool road_was_busy=road_trip::Busy();road_trip::Observe(economy,ready);
+    if(road_was_busy&&!road_trip::Busy()){overlay_ui::FinishAction();return;}
+    if(road_trip::Busy()){
+        road_trip::Tick(economy);
+        if(!road_trip::Busy())overlay_ui::FinishAction();return;
+    }
+#endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Observe(economy, ready);
 #endif
@@ -527,7 +544,12 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     }
     // Consume every request even in menus: never defer it until a future drive/save.
     const int action = overlay_ui::Tick(ready);
-    struct FinishAction {int action;bool reopen=false;~FinishAction(){if(action && !OwnedRefreshBusy() && !freight::Busy())overlay_ui::FinishAction(reopen);}} finish{action};
+    struct FinishAction {int action;bool reopen=false;int page=1;~FinishAction(){
+#ifdef CARGO_CONTROL_ROAD_TRIP
+        if(road_trip::Busy())return;
+#endif
+        if(action && !OwnedRefreshBusy() && !freight::Busy())overlay_ui::FinishAction(reopen,page);
+    }} finish{action};
     if (action && !ready) {
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
         custom_jobs::CancelCreation();
@@ -536,7 +558,13 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
             L"Profile data is not ready. Wait for loading to finish, then try again from the garage.",
             L"Данные профиля ещё не готовы. Дождитесь окончания загрузки и повторите действие в гараже."));
         Log("Manual request rejected: profile/economy is not ready.");
-    } else if (action == 1) RefreshOwnedCargo(economy);
+    }
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    else if(action==5&&g_enabled){road_trip::Scan(economy);finish.reopen=true;finish.page=2;}
+    else if(action==6&&g_enabled)road_trip::Refresh(economy);
+    else if(action==7&&g_enabled)road_trip::Create(economy);
+#endif
+    else if (action == 1) RefreshOwnedCargo(economy);
     else if (action == 2 && g_enabled) freight::Request(economy);
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     else if(action==3 && g_enabled){custom_jobs::Scan(economy);finish.reopen=true;}
@@ -576,6 +604,9 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 
 SCSAPI_VOID scs_telemetry_shutdown(void)
 {
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    road_trip::Reset();
+#endif
     CancelOwnedRefresh();freight::Cancel();
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Shutdown();

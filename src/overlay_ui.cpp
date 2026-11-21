@@ -8,6 +8,9 @@
 #include "menu_pointer.h"
 #include "brand_palette.h"
 #include "plugin_version.h"
+#ifdef CARGO_CONTROL_ROAD_TRIP
+#include "road_trip.h"
+#endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs_ui.h"
 #endif
@@ -34,7 +37,7 @@ std::atomic<bool> stopping{true};
 OperationFeedback operation;
 bool busy_drawn=false,reopen_catalog=false;
 IDXGISwapChain* busy_chain=nullptr;
-int menu_page=0;
+int menu_page=0,reopen_page=1;
 std::uint64_t progress_done=0,progress_total=0;
 std::atomic<unsigned> callbacks{0};
 Logger logger = nullptr;
@@ -224,6 +227,23 @@ void DrawMenu(int preview_page = -1) {
     const int visible_page = preview_page >= 0 ? preview_page : page;
     if(button(Tr("Markets", "Рынки"),32,136,164,40,visible_page==0))page=0;
     if(button(Tr("Create job", "Создать заказ"),212,136,208,40,visible_page==1))page=1;
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    if(road_trip::Visible()&&button("Road Trip",436,136,164,40,visible_page==2))page=2;
+    if((preview_page>=0?preview_page:page)==2&&road_trip::Visible()){
+        ImGui::SetWindowFontScale(1.f);ImGui::SetCursorScreenPos(pos(32,194));
+        ImGui::BeginChild("road-trip-catalog",{836*scale,390*scale});
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.08f,.08f,.08f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,ImVec4(.15f,.15f,.15f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,ImVec4(.2f,.2f,.2f,1));
+        ImGui::PushStyleColor(ImGuiCol_CheckMark,accent);
+        ImGui::PushStyleColor(ImGuiCol_Header,ImVec4(.2f,.3f,.18f,1));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,ImVec4(.25f,.35f,.22f,1));
+        road_trip::Draw(scale,notifications::Russian());ImGui::PopStyleColor(6);ImGui::EndChild();
+        text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
+        if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
+        ImGui::End();ImGui::PopStyleVar();return;
+    }
+#endif
     if((preview_page >= 0 ? preview_page : page)==1) {
         ImGui::SetWindowFontScale(1.f); // Child font scaling must not multiply the header button scale.
         ImGui::SetCursorScreenPos(pos(32,194));
@@ -291,14 +311,15 @@ void DrawBusy(){
     draw->PathArcTo(center,13*scale,phase,phase+4.7f,28);draw->PathStroke(green,0,3*scale);
     const char* title=action==1?Tr("Refreshing trailer cargo...","Обновление грузов для прицепа..."):
         action==2?Tr("Refreshing job market...","Обновление рынка заказов..."):
-        action==3?Tr("Reading loaded session...","Чтение загруженной сессии..."):
+        (action==3||action==5)?Tr("Reading loaded session...","Чтение загруженной сессии..."):
+        action==6?Tr("Refreshing Road Trip offers...","Обновление заказов Road Trip..."):
                   Tr("Creating job...","Создание заказа...");
     draw->AddText(font,20*scale,{p.x+72*scale,p.y+34*scale},white,title);
-    const char* body=action==3?Tr("Reading cities, companies and cargo. The order window will reopen automatically. Please wait.","Считываю города, базы и грузы. Окно заказа откроется автоматически после завершения. Пожалуйста, подождите."):
+    const char* body=(action==3||action==5)?Tr("Reading cities, companies and cargo. The order window will reopen automatically. Please wait.","Считываю города, базы и грузы. Окно заказа откроется автоматически после завершения. Пожалуйста, подождите."):
         Tr("Updating offers. Please wait.","Обновление выполняется. Пожалуйста, подождите.");
     draw->AddText(font,17*scale,{p.x+28*scale,p.y+91*scale},muted,body,nullptr,(size.x-56*scale));
     if(progress_total){
-        char count[160];sprintf_s(count,Tr("Companies processed: %llu / %llu","Обработано баз: %llu из %llu"),progress_done,progress_total);
+        char count[160];sprintf_s(count,action==6?Tr("Offers processed: %llu / %llu","Обработано предложений: %llu из %llu"):Tr("Companies processed: %llu / %llu","Обработано баз: %llu из %llu"),progress_done,progress_total);
         draw->AddText(font,15*scale,{p.x+28*scale,p.y+124*scale},muted,count);
         const ImVec2 left{p.x+28*scale,p.y+151*scale},right{p.x+size.x-28*scale,p.y+157*scale};
         draw->AddRectFilled(left,right,IM_COL32(40,40,40,255),3*scale);
@@ -405,7 +426,7 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
     if(!context && !StartRenderer(chain,desc))return;
     ContextScope scope;
     const bool focused=GetForegroundWindow()==game || allow_hidden;
-    if(reopen_catalog && focused){reopen_catalog=false;menu_page=1;OpenMenu();}
+    if(reopen_catalog && focused){reopen_catalog=false;menu_page=reopen_page;OpenMenu();}
     if(!allow_hidden) Poll(focused);
     ImGui_ImplDX11_NewFrame();auto& io=ImGui::GetIO();
     if(menu&&focused) {
@@ -480,13 +501,17 @@ void Request(int action) {
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     allowed=allowed || action==3 || action==4;
 #endif
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    allowed=allowed || (road_trip::Visible()&&action>=5&&action<=7);
+#endif
     if(allowed && operation.Request(action,GetTickCount64())){
         notice.clear();busy_drawn=false;busy_chain=nullptr;progress_done=progress_total=0;
+        if(action>=5)CloseMenu();
         Log(("Operation queued: action="+std::to_string(action)+"; waiting for visible feedback frames.").c_str());
     }
 }
 int Tick(bool ready) {std::lock_guard<std::recursive_mutex> guard(mutex);const auto action=operation.Take(!ready,GetTickCount64());if(action)Log(("Operation started after feedback: action="+std::to_string(action)+".").c_str());return action;}
-void FinishAction(bool show_catalog){std::lock_guard<std::recursive_mutex> guard(mutex);if(operation.Active())Log("Operation feedback completed.");operation.Complete();busy_drawn=false;busy_chain=nullptr;progress_done=progress_total=0;reopen_catalog=show_catalog;}
+void FinishAction(bool show_catalog,int page){std::lock_guard<std::recursive_mutex> guard(mutex);if(operation.Active())Log("Operation feedback completed.");operation.Complete();busy_drawn=false;busy_chain=nullptr;progress_done=progress_total=0;reopen_catalog=show_catalog;reopen_page=page;}
 void SetProgress(std::uint64_t done,std::uint64_t total){std::lock_guard<std::recursive_mutex> guard(mutex);progress_total=total;progress_done=std::min(done,total);}
 void CancelPending(){FinishAction(false);}
 Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr,operation.Active(),menu}; }

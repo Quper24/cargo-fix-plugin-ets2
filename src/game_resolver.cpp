@@ -29,6 +29,9 @@ namespace catalog_names162 {
 namespace creation162 {
 #include "custom_creation_signatures_162.inc"
 }
+namespace road_trip162 {
+#include "road_trip_signatures_162.inc"
+}
 struct SignatureSet {
     const char* name;
     const char* ets2_name;
@@ -360,6 +363,52 @@ bool ResolveCreationCode(const unsigned char* bytes,std::size_t size,const GameP
     }
     out={resolved[owned_candidates_index],resolved[base_candidates_index],resolved[destinations_index],resolved[base_slot_index],
          resolved[base_factory_index],resolved[schedule_index],resolved[free_event_node_index],resolved[physical_update_index],index,array,prefix};
+    return true;
+}
+bool ResolveRoadTripCode(const unsigned char* bytes,std::size_t size,GameKind game,RoadTripCode& out,std::string& reason) {
+    out={};reason.clear();
+    if(game!=GameKind::ATS){reason="Road Trip is available only in ATS";return false;}
+    Image image{bytes,size};if(!image.Parse()){reason="invalid Road Trip PE image";return false;}
+    using namespace road_trip162;
+    std::vector<std::uint32_t> roots(std::size(signatures)),symbols(symbol_count);
+    std::vector<Reference> refs;
+    // Discover only independent roots; other functions must be linked callees.
+    for(const auto root:{stock_refresh_index,factory_index,refresh_initial_index,registry_source_index}){
+        unsigned found=0;
+        for(auto at:image.starts){
+            const auto& first=signatures[root].instructions[0];
+            if(!image.Code(at,first.size)||std::memcmp(bytes+at,first.bytes,first.width?first.offset:first.size))continue;
+            if(Match(image,signatures[root],at,false,refs)){roots[root]=at;if(++found>1)break;}
+        }
+        if(found!=1){reason=std::string("incompatible Road Trip root: ")+signatures[root].name;return false;}
+    }
+    std::vector<bool> checked(roots.size());bool progress=true;
+    while(progress){progress=false;for(unsigned n=0;n<roots.size();++n){
+        if(!roots[n]||checked[n])continue;
+        if(!std::binary_search(image.starts.begin(),image.starts.end(),roots[n])||!Match(image,signatures[n],roots[n],false,refs)){
+            reason=std::string("incompatible Road Trip function: ")+signatures[n].name;return false;
+        }
+        checked[n]=true;progress=true;
+        for(const auto& ref:refs){
+            if(ref.callee>=0){if(roots[ref.callee]&&roots[ref.callee]!=ref.address){reason="Road Trip call graph conflict";return false;}roots[ref.callee]=ref.address;}
+            if(ref.symbol>=0){if(symbols[ref.symbol]&&symbols[ref.symbol]!=ref.address){reason="Road Trip global conflict";return false;}symbols[ref.symbol]=ref.address;}
+        }
+    }}
+    if(std::find(checked.begin(),checked.end(),false)!=checked.end()){reason="incomplete Road Trip graph";return false;}
+    const PropertyCheck offer[]={{"source",0x10,1},{"target",0x48,1},{"expiration_time",0x80,0x27},{"urgency",0x84,0x27},
+        {"job_type",0x8c,0x3b},{"shortest_distance_km",0x90,0x2b},{"ferry_time",0x92,0x2b},{"ferry_price",0x94,0x2b},
+        {"job",0x98,0x41},{"cargo",0xa0,0x41},{"company_car",0xa8,1},{"units_count",0xc8,0x27}};
+    const PropertyCheck job[]={{"cargos",0x38,0x40},{"vehicle_types",0x60,4},{"source_data_contexts",0x88,4},{"target_data_contexts",0xb0,4}};
+    if(!PropertyGroup(image,offer,std::size(offer))||!PropertyGroup(image,job,std::size(job))){reason="incompatible Road Trip field metadata";return false;}
+    const auto registry=symbols[registry_symbol],format=symbols[point_format_symbol];
+    if(!image.In(registry,8,IMAGE_SCN_MEM_READ|IMAGE_SCN_MEM_WRITE,IMAGE_SCN_MEM_EXECUTE)||
+       !image.In(format,6,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_WRITE|IMAGE_SCN_MEM_EXECUTE)||std::memcmp(bytes+format,"%s.%s",6)){
+        reason="invalid Road Trip globals";return false;
+    }
+    out={roots[generate_index],roots[factory_index],roots[select_car_index],roots[schedule_index],roots[remove_event_index],
+         roots[format_text_index],roots[assign_link_index],roots[assign_text_index],registry,format,
+         roots[lookup_car_index],symbols[vehicle_registry_symbol]};
+    if(!image.In(out.vehicle_registry,32,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_WRITE|IMAGE_SCN_MEM_EXECUTE)){out={};reason="invalid vehicle registry";return false;}
     return true;
 }
 bool ReadExecutableVersion(const wchar_t* path, ExecutableVersion& out) {

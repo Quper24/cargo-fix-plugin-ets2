@@ -2,6 +2,9 @@
 #include "branding.h"
 #include "brand_palette.h"
 #include "menu_pointer.h"
+#ifdef CARGO_CONTROL_ROAD_TRIP
+#include "road_trip.h"
+#endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs.h"
 #endif
@@ -15,7 +18,7 @@
 #include <vector>
 #include <cstring>
 using Microsoft::WRL::ComPtr;
-namespace notifications { bool Russian() { return true; } }
+namespace notifications { bool Russian() { return true; } void Show(const std::wstring&) {} }
 #define Check(ok) do { if(!(ok)) { std::fprintf(stderr,"DX11 check failed: line %d, error %lu\n",__LINE__,GetLastError());std::exit(1); } }while(0)
 void Log(const char* s) { std::puts(s); }
 void Capture(ID3D11Device* dev,ID3D11DeviceContext* gpu,IDXGISwapChain* chain,const wchar_t* path,bool menu_pixels=false,bool progress=false,bool catalog=false) {
@@ -97,6 +100,17 @@ int wmain(int argc,wchar_t** argv) {
     fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","FedEx",{"cargo.mod_cargo9"},{},"Анн-Арбор"});
     fixture.companies.push_back({"company.volatile.other_base.other_city","other_city","Pepsi",{}, {"cargo.mod_cargo9"},"Кенора"});
     custom_jobs::PreviewCatalog(std::move(fixture));
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    road_trip::View road;
+    road.points={{"mod_depot.mod_city","mod_city","Анн-Арбор","FedEx"},{"other_base.other_city","other_city","Кенора","Pepsi"}};
+    road.tasks={{"mod.task|mod.cargo","Посылки",{"mod_depot.mod_city"},{"other_base.other_city"}}};
+    road_trip::Preview(std::move(road));
+    for(int i=0;i<3;++i)render(true,2);
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>5?argv[5]:nullptr);
+    overlay_ui::Request(5);for(int i=0;i<3;++i)render();Sleep(160);
+    Check(overlay_ui::Tick()==5);overlay_ui::FinishAction(true,2);render();
+    Check(overlay_ui::Inspect().menu);
+#endif
     for(int i=0;i<3;++i)render(true,1);
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>3?argv[3]:nullptr,false,false,true);
     overlay_ui::Request(3);Check(overlay_ui::Tick()==0);

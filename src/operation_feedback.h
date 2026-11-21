@@ -6,7 +6,7 @@ namespace overlay_ui {
 class OperationFeedback {
 public:
     bool Request(int action,std::uint64_t now=0){
-        if(active || action<1 || action>4)return false;
+        if(active || action<1 || action>7)return false;
         active=action;pending=true;presents=0;started=now;return true;
     }
     int Take(bool reject_unpresented=false,std::uint64_t now=UINT64_MAX){if(!pending || (!reject_unpresented && (presents<3 || now<started || now-started<150)))return 0;pending=false;return active;}

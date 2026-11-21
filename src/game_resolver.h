@@ -29,3 +29,10 @@ struct CreationCode {
 // Must run on the original code image, before existing generator/scheduler hooks.
 bool ResolveCreationCode(const unsigned char* image, std::size_t size, const GameProfile& core,
                          CreationCode& out, std::string& reason);
+struct RoadTripCode {
+    std::uint32_t generate=0, factory=0, select_car=0, schedule=0, remove_event=0;
+    std::uint32_t format_text=0, assign_link=0, assign_text=0, registry=0, point_format=0;
+    std::uint32_t lookup_car=0,vehicle_registry=0;
+};
+bool ResolveRoadTripCode(const unsigned char* image,std::size_t size,GameKind game,
+                         RoadTripCode& out,std::string& reason);

@@ -10,6 +10,7 @@
 #include <array>
 #include <cstring>
 #define Check(value) do { if (!(value)) { std::fprintf(stderr,"Catalog profile check failed: %d\n",__LINE__); std::exit(1); } } while(0)
+#include "road_trip_factory_probe.h"
 struct Fixture {
     const char* name; const char* sha256;
     std::uint32_t generator, fill, pools, guard_rva;
@@ -144,6 +145,21 @@ int wmain(int argc, wchar_t** argv) {
         }
     }
     Check(changed && ResolveCatalogPools(image.data(),image.size(),pools,error));
+    RoadTripCode road{};
+    if(path.filename()==L"amtrucks.exe"){
+        if(!ResolveRoadTripCode(image.data(),image.size(),GameKind::ATS,road,error)){
+            std::fprintf(stderr,"Road Trip: %s\n",error.c_str());std::exit(1);
+        }
+        const auto expected_road=road;
+        CheckRoadTripFactory(image,road);
+        Check(!ResolveRoadTripCode(image.data(),image.size(),GameKind::ETS2,road,error));
+        for(auto address:{expected_road.generate,expected_road.factory+8,expected_road.select_car+8,expected_road.schedule+8,expected_road.remove_event+8,expected_road.lookup_car+8}){
+            image[address]^=1;
+            Check(!ResolveRoadTripCode(image.data(),image.size(),GameKind::ATS,road,error));
+            image[address]^=1;
+        }
+        Check(ResolveRoadTripCode(image.data(),image.size(),GameKind::ATS,road,error));
+    }else Check(!ResolveRoadTripCode(image.data(),image.size(),GameKind::ETS2,road,error));
     Check(ResolveCatalogNames(image.data(),image.size(),names,error) && names.localize==expected_names.localize);
     custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(image.data()),image.size(),nullptr);
     Check(custom_jobs::Snapshot()->supported);
@@ -170,6 +186,21 @@ int wmain(int argc, wchar_t** argv) {
     Check(ResolveGameProfile(moved.data(),moved.size(),path.filename()==L"amtrucks.exe"?GameKind::ATS:GameKind::ETS2,moved_core,error));
     Check(ResolveCreationCode(moved.data(),moved.size(),moved_core,moved_creation,error));
     Check(moved_creation.base_slot==creation.base_slot+shift && moved_creation.allocator_array==creation.allocator_array+shift);
+    if(path.filename()==L"amtrucks.exe"){
+        // Metadata/vtables contain absolute image pointers; move those with their sections.
+        const auto preferred=moved_nt->OptionalHeader.ImageBase;
+        for(unsigned n=0;n<moved_nt->FileHeader.NumberOfSections;++n){
+            const auto& s=moved_sections[n];if(s.Characteristics&IMAGE_SCN_MEM_EXECUTE)continue;
+            for(std::uint64_t at=s.VirtualAddress;at+8<=std::uint64_t(s.VirtualAddress)+std::max(s.Misc.VirtualSize,s.SizeOfRawData);at+=8){
+                std::uint64_t pointer=0;std::memcpy(&pointer,moved.data()+at,8);
+                if(pointer>=preferred+nt->OptionalHeader.SizeOfHeaders&&pointer<preferred+image.size()){
+                    pointer+=shift;std::memcpy(moved.data()+at,&pointer,8);
+                }
+            }
+        }
+        RoadTripCode moved_road{};Check(ResolveRoadTripCode(moved.data(),moved.size(),GameKind::ATS,moved_road,error));
+        Check(moved_road.generate==road.generate+shift&&moved_road.registry==road.registry+shift&&moved_road.vehicle_registry==road.vehicle_registry+shift);
+    }
     custom_jobs::Initialize(reinterpret_cast<std::uintptr_t>(moved.data()),moved.size(),nullptr);
     Check(custom_jobs::Snapshot()->supported);
     image[fixture->guard_rva]^=1;
