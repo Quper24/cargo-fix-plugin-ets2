@@ -4,8 +4,8 @@ void Check(bool value){if(!value)std::abort();}
 int main(){
     overlay_ui::OperationFeedback state;
     Check(!state.Active() && !state.Take());
-    Check(!state.Request(0) && !state.Request(8));
-    for(int action=1;action<=7;++action){
+    Check(!state.Request(0) && !state.Request(11));
+    for(int action=1;action<=10;++action){
         Check(state.Request(action));Check(state.Active()==action);
         Check(!state.Take());Check(!state.Request(action==1?2:1));
         state.Presented();Check(!state.Take());state.Presented();Check(!state.Take());state.Presented();Check(state.Take()==action);Check(!state.Take());

@@ -5,6 +5,7 @@
 #include "owned_offers.h"
 #include "overlay_ui.h"
 #include "notifications.h"
+#include "ui_controls.h"
 #include <Windows.h>
 #include <imgui.h>
 #include <mutex>
@@ -263,12 +264,11 @@ void Draw(float scale,bool russian){
     if(!state->available){ImGui::TextWrapped("%s",tr("Could not initialize the Road Trip module. See game.log.txt.","Не удалось подключить модуль Road Trip. Подробности в game.log.txt."));return;}
     if(state->status==SessionStatus::NotLoaded){ImGui::TextWrapped("%s",tr("Load your game profile to detect Road Trip content.","Загрузите игровой профиль, чтобы проверить доступность Road Trip."));return;}
     if(state->status==SessionStatus::ContentUnavailable){ImGui::TextWrapped("%s",tr("Road Trip content is not loaded. Check that the DLC is available and enabled, then load a Road Trip profile.","Данные Road Trip не загружены. Проверьте, что DLC доступен и подключён, затем загрузите профиль Road Trip."));return;}
-    const ImVec4 green(.435f,.827f,.294f,1);
-    ImGui::PushStyleColor(ImGuiCol_Button,green);ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1));
-    if(ImGui::Button(tr("Read Road Trip session","Считать сессию Road Trip"),{286*scale,36*scale}))overlay_ui::Request(5);
+    if(controls::PrimaryButton(tr("Read Road Trip session","Считать сессию Road Trip"),{286*scale,40*scale}))overlay_ui::Request(5);
+    controls::Hint(tr("The window closes while reading and reopens automatically.","На время чтения окно закроется и откроется автоматически."));
     ImGui::SameLine(0,14*scale);
-    if(ImGui::Button(tr("Refresh Road Trip offers","Обновить заказы Road Trip"),{286*scale,36*scale}))overlay_ui::Request(6);
-    ImGui::PopStyleColor(2);
+    if(controls::PrimaryButton(tr("Refresh Road Trip offers","Обновить заказы Road Trip"),{286*scale,40*scale}))overlay_ui::Request(6);
+    controls::Hint(tr("Replace Quick Jobs and Dispatch offers using the game generator.","Заменить предложения быстрых заказов и доставки штатным генератором игры."));
     ImGui::TextWrapped("%s",tr("Quick Jobs and Dispatch offers are refreshed together. Existing offers survive a failed generation.","Обновляются предложения быстрых заказов и доставки. Если подбор не удался, старое предложение сохраняется."));
     if(!state->scanned){ImGui::TextWrapped("%s",tr("Select your car and read the loaded session. The window will reopen automatically.","Выберите свою машину и считайте загруженную сессию. Окно откроется автоматически."));return;}
     if(!state->own_car){ImGui::TextWrapped("%s",tr("Select your own car in Road Trip, then read the session again.","Выберите собственную машину в Road Trip и считайте сессию повторно."));return;}
@@ -280,9 +280,12 @@ void Draw(float scale,bool russian){
     const Task* selected=nullptr;for(const auto& item:state->tasks)if(item.id==task)selected=&item;
     ImGui::TextUnformatted(tr("Delivery / vehicle transfer","Отправление / перегон автомобиля"));ImGui::SetNextItemWidth(-1);
     if(ImGui::BeginCombo("##rt-task",selected?selected->name.c_str():tr("Choose...","Выберите..."))){
+        bool found=false;
         for(const auto& item:state->tasks){if(!ContainsName(item.name,search))continue;ImGui::PushID(item.id.c_str());
+            found=true;
             if(ImGui::Selectable(item.name.c_str(),item.id==task)){task=item.id;from.clear();to.clear();search[0]=0;}
-            if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",item.id.c_str());ImGui::PopID();}
+            ImGui::PopID();}
+        controls::NoMatches(found,russian);
         ImGui::EndCombo();
     }
     selected=nullptr;for(const auto& item:state->tasks)if(item.id==task)selected=&item;
@@ -293,23 +296,31 @@ void Draw(float scale,bool russian){
         std::map<std::string,std::string> cities;
         for(const auto& p:state->points)if(allowed&&Contains(*allowed,p.id))cities[p.city]=p.city_name;
         ImGui::PushID(source?"rt-source":"rt-target");
-        ImGui::BeginGroup();ImGui::TextUnformatted(source?tr("Departure city","Город отправления"):tr("Destination city","Город назначения"));ImGui::SetNextItemWidth(width);
+        const auto row_y=ImGui::GetCursorPosY();
+        ImGui::BeginGroup();ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(source?tr("Departure city","Город отправления"):tr("Destination city","Город назначения"));ImGui::SetNextItemWidth(width);
         if(ImGui::BeginCombo("##city",cities.count(city)?cities[city].c_str():tr("Choose...","Выберите..."))){
-            for(const auto& item:cities){if(!ContainsName(item.second,search))continue;ImGui::PushID(item.first.c_str());
-                if(ImGui::Selectable(item.second.c_str(),item.first==city)){city=item.first;id.clear();search[0]=0;}ImGui::PopID();}ImGui::EndCombo();}
-        ImGui::EndGroup();ImGui::SameLine(0,16*scale);ImGui::BeginGroup();
-        ImGui::TextUnformatted(source?tr("Departure depot","База отправления"):tr("Destination depot","База назначения"));ImGui::SetNextItemWidth(width);
+            std::vector<std::pair<std::string,std::string>> sorted(cities.begin(),cities.end());
+            std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second<b.second;});
+            bool found=false;
+            for(const auto& item:sorted){if(!ContainsName(item.second,search))continue;found=true;ImGui::PushID(item.first.c_str());
+                if(ImGui::Selectable(item.second.c_str(),item.first==city)){city=item.first;id.clear();search[0]=0;}ImGui::PopID();}
+            controls::NoMatches(found,russian);ImGui::EndCombo();}
+        ImGui::EndGroup();ImGui::SameLine(0,16*scale);ImGui::SetCursorPosY(row_y);ImGui::BeginGroup();
+        ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(source?tr("Departure depot","База отправления"):tr("Destination depot","База назначения"));ImGui::SetNextItemWidth(width);
         std::string label=tr("Choose...","Выберите...");for(const auto& p:state->points)if(p.id==id)label=p.name;
-        if(ImGui::BeginCombo("##depot",label.c_str())){for(const auto& p:state->points){if(p.city!=city||!allowed||!Contains(*allowed,p.id)||!ContainsName(p.name,search))continue;
-            ImGui::PushID(p.id.c_str());if(ImGui::Selectable(p.name.c_str(),p.id==id)){id=p.id;search[0]=0;}if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",p.id.c_str());ImGui::PopID();}ImGui::EndCombo();}
+        if(ImGui::BeginCombo("##depot",label.c_str())){
+            std::vector<const Point*> sorted;
+            for(const auto& p:state->points)if(p.city==city&&allowed&&Contains(*allowed,p.id)&&ContainsName(p.name,search))sorted.push_back(&p);
+            std::sort(sorted.begin(),sorted.end(),[](const auto* a,const auto* b){return a->name<b->name;});
+            for(const auto* p:sorted){ImGui::PushID(p->id.c_str());if(ImGui::Selectable(p->name.c_str(),p->id==id)){id=p->id;search[0]=0;}ImGui::PopID();}
+            controls::NoMatches(!sorted.empty(),russian);ImGui::EndCombo();}
         ImGui::EndGroup();ImGui::PopID();
     };
     point_fields(true);point_fields(false);
     ImGui::TextWrapped("%s",tr("One existing offer may be replaced automatically.","Одно существующее предложение может быть заменено автоматически."));
     const bool valid=selected&&!from.empty()&&!to.empty()&&from!=to;
-    ImGui::BeginDisabled(!valid);
-    if(ImGui::Button(tr("Create Road Trip job","Создать заказ Road Trip"),{260*scale,36*scale})&&Queue({state->session,task,from,to}))overlay_ui::Request(7);
-    ImGui::EndDisabled();
+    if(controls::PrimaryButton(tr("Create Road Trip job","Создать заказ Road Trip"),{260*scale,36*scale},valid)&&Queue({state->session,task,from,to}))overlay_ui::Request(7);
+    if(!valid)controls::Hint(tr("Select a task, departure and a different destination.","Выберите задание, базу отправления и другую базу назначения."));
     if(!state->message.empty())ImGui::TextWrapped("%s",state->message.c_str());
 }
 }

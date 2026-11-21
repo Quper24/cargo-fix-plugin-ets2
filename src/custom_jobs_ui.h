@@ -1,6 +1,7 @@
 #pragma once
 #include "custom_jobs.h"
 #include "brand_palette.h"
+#include "ui_controls.h"
 #include <imgui.h>
 #include <array>
 #include <set>
@@ -108,14 +109,17 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         std::vector<std::pair<std::string,std::string>> sorted(cities.begin(),cities.end());
         std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second==b.second?a.first<b.first:a.second<b.second;});
         bool changed = false;
-        ImGui::TextUnformatted(label);ImGui::PushID(label);
+        ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(label);ImGui::PushID(label);
         ImGui::SetNextItemWidth(-FLT_MIN);
         if (ImGui::BeginCombo("##value", selected.empty() ? tr("Select...", "Выберите...") : city_names[selected].c_str())) {
+            bool found=false;
             for (const auto& city : sorted) if (visible(city.second)) {
+                found=true;
                 ImGui::PushID(city.first.c_str());
                 if(ImGui::Selectable(city.second.c_str(),selected==city.first)){selected=city.first;changed=true;search.fill(0);}
                 ImGui::PopID();
             }
+            controls::NoMatches(found,russian);
             ImGui::EndCombo();
         }
         ImGui::PopID();return changed;
@@ -123,7 +127,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     auto base_select = [&](const char* label, const std::string& city, std::string& selected, bool destination) {
         const auto* company = find_company(selected);
         bool changed = false;
-        ImGui::TextUnformatted(label);ImGui::PushID(label);
+        ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(label);ImGui::PushID(label);
         ImGui::SetNextItemWidth(-FLT_MIN);
         if (ImGui::BeginCombo("##value", company ? company->name.c_str() : tr("Select...", "Выберите..."))) {
             std::vector<const Company*> bases;
@@ -136,6 +140,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
                 if (ImGui::Selectable(base.name.c_str(), base.id == selected)) { selected = base.id; changed = true;search.fill(0); }
                 ImGui::PopID();
             }
+            controls::NoMatches(!bases.empty(),russian);
             ImGui::EndCombo();
         }
         ImGui::PopID();return changed;
@@ -158,15 +163,18 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     }
     ImGui::TextUnformatted(tr("Cargo","Груз"));ImGui::SetNextItemWidth(-FLT_MIN);
     if (ImGui::BeginCombo("##cargo", cargo_id.empty() ? tr("Select...", "Выберите...") : cargo_label(cargo_id).c_str())) {
+        bool found=false;
         auto sorted=available;
         std::sort(sorted.begin(),sorted.end(),[&](const auto& a,const auto& b){return cargo_label(a)==cargo_label(b)?a<b:cargo_label(a)<cargo_label(b);});
         for (const auto& cargo : sorted) if (visible(cargo_label(cargo))) {
+            found=true;
             ImGui::PushID(cargo.c_str());
             if(ImGui::Selectable(cargo_label(cargo).c_str(),cargo_id==cargo)) {
                 cargo_id=cargo;destination_city.clear();destination_id.clear();search.fill(0);
             }
             ImGui::PopID();
         }
+        controls::NoMatches(found,russian);
         ImGui::EndCombo();
     }
     if(ImGui::BeginTable("destination-fields",2,ImGuiTableFlags_SizingStretchSame)){
@@ -208,6 +216,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     }
     if(can_create)ImGui::PopStyleColor(4);
     ImGui::PopStyleVar(2);ImGui::EndDisabled();
+    if(!can_create)controls::Hint(tr("Choose departure city and company, cargo, then destination city and company.","Выберите город и базу отправления, груз, затем город и базу назначения."));
     if(market==1 && origin && available.empty() && state->trailer_cargos.status==TrailerCargoStatus::Ready)
         ImGui::TextWrapped("%s",tr("No cargo compatible with your trailer was found in the loaded session.","В загруженной сессии не найдено грузов для вашего прицепа."));
     if(!request_error.empty())ImGui::TextWrapped("%s",request_error.c_str());

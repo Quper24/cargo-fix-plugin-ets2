@@ -10,6 +10,7 @@
 #include "plugin_version.h"
 #ifdef CARGO_CONTROL_ROAD_TRIP
 #include "road_trip.h"
+#include "coaches.h"
 #endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs_ui.h"
@@ -203,8 +204,11 @@ void Poll(bool focused) {
 void DrawMenu(int preview_page = -1) {
     auto& io=ImGui::GetIO();const float scale=std::min(1.f,std::min((io.DisplaySize.x-24)/900,(io.DisplaySize.y-24)/660));
     if(scale<=0)return;
+    static ImVec2 last_display{};
+    const bool resized=last_display.x!=io.DisplaySize.x||last_display.y!=io.DisplaySize.y;
+    last_display=io.DisplaySize;
     ImGui::SetNextWindowSize({900*scale,660*scale});
-    ImGui::SetNextWindowPos({io.DisplaySize.x/2,io.DisplaySize.y/2},ImGuiCond_Appearing,{.5f,.5f});
+    ImGui::SetNextWindowPos({io.DisplaySize.x/2,io.DisplaySize.y/2},resized?ImGuiCond_Always:ImGuiCond_Appearing,{.5f,.5f});
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{0,0});
     ImGui::Begin("Cargo Control",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar);
     const auto origin=ImGui::GetWindowPos(); auto* draw=ImGui::GetWindowDrawList();
@@ -227,6 +231,23 @@ void DrawMenu(int preview_page = -1) {
     const int visible_page = preview_page >= 0 ? preview_page : page;
     if(button(Tr("Markets", "Рынки"),32,136,164,40,visible_page==0))page=0;
     if(button(Tr("Create job", "Создать заказ"),212,136,208,40,visible_page==1))page=1;
+#ifdef CARGO_CONTROL_COACHES
+    if(coaches::Visible()&&button("Coaches",436,136,164,40,visible_page==3))page=3;
+    if((preview_page>=0?preview_page:page)==3&&coaches::Visible()){
+        ImGui::SetWindowFontScale(1.f);ImGui::SetCursorScreenPos(pos(32,194));
+        ImGui::BeginChild("coach-catalog",{836*scale,390*scale});
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.08f,.08f,.08f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,ImVec4(.15f,.15f,.15f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,ImVec4(.2f,.2f,.2f,1));
+        ImGui::PushStyleColor(ImGuiCol_CheckMark,accent);
+        ImGui::PushStyleColor(ImGuiCol_Header,ImVec4(.2f,.3f,.18f,1));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,ImVec4(.25f,.35f,.22f,1));
+        coaches::Draw(scale,notifications::Russian());ImGui::PopStyleColor(6);ImGui::EndChild();
+        text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
+        if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
+        ImGui::End();ImGui::PopStyleVar();return;
+    }
+#endif
 #ifdef CARGO_CONTROL_ROAD_TRIP
     if(road_trip::Visible()&&button("Road Trip",436,136,164,40,visible_page==2))page=2;
     if((preview_page>=0?preview_page:page)==2&&road_trip::Visible()){
@@ -311,15 +332,17 @@ void DrawBusy(){
     draw->PathArcTo(center,13*scale,phase,phase+4.7f,28);draw->PathStroke(green,0,3*scale);
     const char* title=action==1?Tr("Refreshing trailer cargo...","Обновление грузов для прицепа..."):
         action==2?Tr("Refreshing job market...","Обновление рынка заказов..."):
-        (action==3||action==5)?Tr("Reading loaded session...","Чтение загруженной сессии..."):
+        (action==3||action==5||action==8)?Tr("Reading loaded session...","Чтение загруженной сессии..."):
         action==6?Tr("Refreshing Road Trip offers...","Обновление заказов Road Trip..."):
+        action==9?Tr("Refreshing coach offers...","Обновление автобусных рейсов..."):
                   Tr("Creating job...","Создание заказа...");
     draw->AddText(font,20*scale,{p.x+72*scale,p.y+34*scale},white,title);
-    const char* body=(action==3||action==5)?Tr("Reading cities, companies and cargo. The order window will reopen automatically. Please wait.","Считываю города, базы и грузы. Окно заказа откроется автоматически после завершения. Пожалуйста, подождите."):
+    const char* body=action==8?Tr("Reading bus stations. The window will reopen automatically. Please wait.","Считываю автобусные станции. Окно откроется автоматически. Пожалуйста, подождите."):
+        (action==3||action==5)?Tr("Reading cities, companies and cargo. The order window will reopen automatically. Please wait.","Считываю города, базы и грузы. Окно заказа откроется автоматически после завершения. Пожалуйста, подождите."):
         Tr("Updating offers. Please wait.","Обновление выполняется. Пожалуйста, подождите.");
     draw->AddText(font,17*scale,{p.x+28*scale,p.y+91*scale},muted,body,nullptr,(size.x-56*scale));
     if(progress_total){
-        char count[160];sprintf_s(count,action==6?Tr("Offers processed: %llu / %llu","Обработано предложений: %llu из %llu"):Tr("Companies processed: %llu / %llu","Обработано баз: %llu из %llu"),progress_done,progress_total);
+        char count[160];sprintf_s(count,action==9?Tr("Stations processed: %llu / %llu","Обработано станций: %llu из %llu"):action==6?Tr("Offers processed: %llu / %llu","Обработано предложений: %llu из %llu"):Tr("Companies processed: %llu / %llu","Обработано баз: %llu из %llu"),progress_done,progress_total);
         draw->AddText(font,15*scale,{p.x+28*scale,p.y+124*scale},muted,count);
         const ImVec2 left{p.x+28*scale,p.y+151*scale},right{p.x+size.x-28*scale,p.y+157*scale};
         draw->AddRectFilled(left,right,IM_COL32(40,40,40,255),3*scale);
@@ -498,6 +521,9 @@ void Notify(const std::wstring& text) { std::lock_guard<std::recursive_mutex> gu
 void Request(int action) {
     std::lock_guard<std::recursive_mutex> guard(mutex);
     bool allowed=action==1 || action==2;
+#ifdef CARGO_CONTROL_COACHES
+    allowed=allowed || (coaches::Visible()&&action>=8&&action<=10);
+#endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     allowed=allowed || action==3 || action==4;
 #endif

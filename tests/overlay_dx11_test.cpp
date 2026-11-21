@@ -1,6 +1,9 @@
 #include "overlay_ui.h"
 #include "branding.h"
 #include "brand_palette.h"
+#ifdef CARGO_CONTROL_COACHES
+#include "coaches.h"
+#endif
 #include "menu_pointer.h"
 #ifdef CARGO_CONTROL_ROAD_TRIP
 #include "road_trip.h"
@@ -112,6 +115,33 @@ int wmain(int argc,wchar_t** argv) {
     Check(overlay_ui::Inspect().menu);
 #endif
     for(int i=0;i<3;++i)render(true,1);
+#ifdef CARGO_CONTROL_COACHES
+    coaches::View coach;coach.session=1;coach.stops={{"busstop.city.paris","Париж"},{"busstop.city.berlin","Берлин"}};
+    coaches::Preview(std::move(coach));
+    for(int i=0;i<3;++i)render(true,3);
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>6?argv[6]:nullptr,false,false,true);
+    coaches::View long_route;long_route.session=2;
+    for(unsigned i=0;i<24;++i){const auto id="busstop.city."+std::to_string(i);
+        long_route.stops.push_back({id,i==0?"Санкт-Петербург - центральный автовокзал":"Станция "+std::to_string(i+1)});
+        long_route.preview_route.push_back(id);
+    }
+    coaches::Preview(long_route);
+    for(int i=0;i<3;++i)render(true,3);
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>7?argv[7]:nullptr,false,false,true);
+    // Smaller displays must still render all pages without exposing a desktop window.
+    Check(SUCCEEDED(chain->ResizeBuffers(0,800,600,DXGI_FORMAT_B8G8R8A8_UNORM,0)));
+    SetWindowPos(window,nullptr,0,0,800,600,SWP_NOACTIVATE|SWP_NOZORDER);
+    for(int page:{0,1,2,3}){for(int i=0;i<3;++i)render(true,page);Capture(dev.Get(),gpu.Get(),chain.Get(),page==3&&argc>8?argv[8]:nullptr);}
+    Check(SUCCEEDED(chain->ResizeBuffers(0,1024,768,DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,0)));
+    SetWindowPos(window,nullptr,0,0,1024,768,SWP_NOACTIVATE|SWP_NOZORDER);
+    overlay_ui::Request(8);for(int i=0;i<3;++i)render();Sleep(160);
+    Check(overlay_ui::Tick()==8);overlay_ui::FinishAction(true,3);render();Check(overlay_ui::Inspect().menu);
+    overlay_ui::Request(9);overlay_ui::SetProgress(12,100);for(int i=0;i<3;++i)render();Sleep(160);
+    Check(overlay_ui::Tick()==9);overlay_ui::FinishAction();
+    overlay_ui::Request(10);for(int i=0;i<3;++i)render();Sleep(160);
+    Check(overlay_ui::Tick()==10);overlay_ui::FinishAction();
+    for(int i=0;i<3;++i)render(true,1);
+#endif
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>3?argv[3]:nullptr,false,false,true);
     overlay_ui::Request(3);Check(overlay_ui::Tick()==0);
     for(int i=0;i<3;++i)render();Sleep(160);

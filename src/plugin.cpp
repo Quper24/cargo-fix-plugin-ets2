@@ -24,6 +24,7 @@
 #include "plugin_version.h"
 #ifdef CARGO_CONTROL_ROAD_TRIP
 #include "road_trip.h"
+#include "coaches.h"
 #endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs.h"
@@ -302,6 +303,9 @@ bool InitializeProfile()
     // original code before installing any of our patches or MinHook detours.
     road_trip::Initialize(g_module_base,nt->OptionalHeader.SizeOfImage,g_game,*g_profile,g_creation_code,Log);
 #endif
+#ifdef CARGO_CONTROL_COACHES
+    coaches::Initialize(g_module_base,nt->OptionalHeader.SizeOfImage,g_game,*g_profile,g_creation_code,Log);
+#endif
     if (!PatchGeneratorBudget()) {
         Log("generator patch failed; profile disabled.");
         return false;
@@ -339,6 +343,9 @@ bool OwnedRefreshBusy();
 void ResetSession()
 {
     overlay_ui::CancelPending();CancelOwnedRefresh();
+#ifdef CARGO_CONTROL_COACHES
+    coaches::Reset();
+#endif
 #ifdef CARGO_CONTROL_ROAD_TRIP
     road_trip::Reset();
 #endif
@@ -525,6 +532,14 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     g_last_economy = economy;
     notifications::Tick();
     const bool ready = g_readiness.Observe(snapshot, valid, restarted);
+#ifdef CARGO_CONTROL_COACHES
+    const bool coaches_was_busy=coaches::Busy();coaches::Observe(economy,ready);
+    if(coaches_was_busy&&!coaches::Busy()){overlay_ui::FinishAction();return;}
+    if(coaches::Busy()){
+        coaches::Tick(economy);
+        if(!coaches::Busy())overlay_ui::FinishAction();return;
+    }
+#endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     delivery_time::Observe(economy,ready);
 #endif
@@ -552,6 +567,9 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     // Consume every request even in menus: never defer it until a future drive/save.
     const int action = overlay_ui::Tick(ready);
     struct FinishAction {int action;bool reopen=false;int page=1;~FinishAction(){
+#ifdef CARGO_CONTROL_COACHES
+        if(coaches::Busy())return;
+#endif
 #ifdef CARGO_CONTROL_ROAD_TRIP
         if(road_trip::Busy())return;
 #endif
@@ -570,6 +588,11 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     else if(action==5&&g_enabled){road_trip::Scan(economy);finish.reopen=true;finish.page=2;}
     else if(action==6&&g_enabled)road_trip::Refresh(economy);
     else if(action==7&&g_enabled)road_trip::Create(economy);
+#endif
+#ifdef CARGO_CONTROL_COACHES
+    else if(action==8&&g_enabled){coaches::Scan(economy);finish.reopen=true;finish.page=3;}
+    else if(action==9&&g_enabled)coaches::Refresh(economy);
+    else if(action==10&&g_enabled)coaches::Create(economy);
 #endif
     else if (action == 1) RefreshOwnedCargo(economy);
     else if (action == 2 && g_enabled) freight::Request(economy);
@@ -611,6 +634,9 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 
 SCSAPI_VOID scs_telemetry_shutdown(void)
 {
+#ifdef CARGO_CONTROL_COACHES
+    coaches::Reset();
+#endif
 #ifdef CARGO_CONTROL_ROAD_TRIP
     road_trip::Reset();
 #endif

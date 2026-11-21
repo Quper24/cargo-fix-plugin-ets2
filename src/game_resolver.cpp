@@ -35,6 +35,12 @@ namespace road_trip162 {
 namespace delivery_time162 {
 #include "delivery_time_signatures_162.inc"
 }
+namespace coaches162 {
+#include "coaches_signatures_162.inc"
+}
+namespace coaches162early {
+#include "coaches_signatures_162_early.inc"
+}
 struct SignatureSet {
     const char* name;
     const char* ets2_name;
@@ -428,6 +434,55 @@ bool ResolveRoadTripCode(const unsigned char* bytes,std::size_t size,GameKind ga
          roots[lookup_car_index],symbols[vehicle_registry_symbol]};
     if(!image.In(out.vehicle_registry,32,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_WRITE|IMAGE_SCN_MEM_EXECUTE)){out={};reason="invalid vehicle registry";return false;}
     return true;
+}
+static bool ResolveCoachesLayout(const Image& image,const Signature* signatures,std::size_t count,unsigned symbol_count,
+                                std::vector<std::uint32_t>& roots,std::string& reason){
+    const auto* bytes=image.data;
+    constexpr auto fill_index=coaches162::fill_index;
+    roots.assign(count,0);std::vector<std::uint32_t> symbols(symbol_count);
+    std::vector<Reference> refs;
+    unsigned found=0;
+    for(auto at:image.starts){
+        const auto& first=signatures[fill_index].instructions[0];
+        if(!image.Code(at,first.size)||std::memcmp(bytes+at,first.bytes,first.width?first.offset:first.size))continue;
+        if(Match(image,signatures[fill_index],at,false,refs)){roots[fill_index]=at;if(++found>1)break;}
+    }
+    if(found!=1){reason="incompatible Coaches generator root";return false;}
+    std::vector<bool> checked(roots.size());bool progress=true;
+    while(progress){progress=false;for(unsigned n=0;n<roots.size();++n){
+        if(!roots[n]||checked[n])continue;
+        if(!std::binary_search(image.starts.begin(),image.starts.end(),roots[n])||!Match(image,signatures[n],roots[n],false,refs)){
+            reason=std::string("incompatible Coaches function: ")+signatures[n].name;return false;
+        }
+        checked[n]=true;progress=true;
+        for(const auto& ref:refs){
+            if(ref.callee>=0){if(roots[ref.callee]&&roots[ref.callee]!=ref.address){reason="Coaches call graph conflict";return false;}roots[ref.callee]=ref.address;}
+            if(ref.symbol>=0){if(symbols[ref.symbol]&&symbols[ref.symbol]!=ref.address){reason="Coaches global conflict";return false;}symbols[ref.symbol]=ref.address;}
+        }
+    }}
+    if(std::find(checked.begin(),checked.end(),false)!=checked.end()){reason="incomplete Coaches graph";return false;}
+    return true;
+}
+bool ResolveCoachesCode(const unsigned char* bytes,std::size_t size,GameKind game,CoachesCode& out,std::string& reason) {
+    out={};reason.clear();
+    if(game!=GameKind::ETS2){reason="Coaches is available only in ETS2";return false;}
+    Image image{bytes,size};if(!image.Parse()){reason="invalid Coaches PE image";return false;}
+    using namespace coaches162;
+    std::vector<std::uint32_t> roots;
+    if(!ResolveCoachesLayout(image,signatures,std::size(signatures),symbol_count,roots,reason)&&
+       !ResolveCoachesLayout(image,coaches162early::signatures,std::size(coaches162early::signatures),coaches162early::symbol_count,roots,reason))return false;
+    const PropertyCheck arrays[]={{"targets_distances",0x48,0x28},{"targets_times",0x70,0x28},
+        {"targets_ferry_times",0x98,0x28},{"targets_base_times",0xc0,0x28}};
+    const PropertyCheck stop[]={{"discovered",0x40,0x39},{"lines_offer",0x68,0x3e}};
+    const PropertyCheck offer[]={{"type",0x10,0x3b},{"source",0x18,0x3f},{"saved_targets",0x120,2}};
+    const PropertyCheck timing[]={{"departure_time_of_day",0xe8,0x27},{"bus_name",0xf0,1},{"expiration_time",0x110,0x27}};
+    if(!PropertyGroup(image,arrays,std::size(arrays))||!PropertyGroup(image,stop,std::size(stop))||
+       !PropertyGroup(image,offer,std::size(offer))||!PropertyGroup(image,timing,std::size(timing))){reason="incompatible Coaches metadata";return false;}
+    out={roots[fill_index],roots[clear_index],roots[generate_index],roots[planner_init_index],
+         roots[prepare_index],roots[commit_index],roots[append_index],roots[validate_index],roots[factory_index],
+         roots[schedule_index],roots[remove_events_index],roots[free_numbers_index],roots[free_targets_index],
+         roots[clear_vector_index],roots[stop_name_index]};
+    reason.clear();return true;
 }
 bool ReadExecutableVersion(const wchar_t* path, ExecutableVersion& out) {
     out = {};

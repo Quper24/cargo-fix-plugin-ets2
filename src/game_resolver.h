@@ -39,3 +39,10 @@ bool ResolveRoadTripCode(const unsigned char* image,std::size_t size,GameKind ga
 struct DeliveryTimeCode {std::uint32_t freight_window=0,owned_window=0;};
 bool ResolveDeliveryTimeCode(const unsigned char* image,std::size_t size,const CreationCode& creation,
                              DeliveryTimeCode& out,std::string& reason);
+struct CoachesCode {
+    std::uint32_t fill=0,clear=0,generate=0,planner_init=0,prepare=0,commit=0;
+    std::uint32_t append=0,validate=0,factory=0,schedule=0,remove_events=0;
+    std::uint32_t free_numbers=0,free_targets=0,clear_vector=0,stop_name=0;
+};
+bool ResolveCoachesCode(const unsigned char* image,std::size_t size,GameKind game,
+                       CoachesCode& out,std::string& reason);
