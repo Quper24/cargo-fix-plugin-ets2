@@ -6,8 +6,10 @@
 namespace road_trip {
 struct Point {std::string id,city,city_name,name;};
 struct Task {std::string id,name;std::vector<std::string> sources,targets;};
+enum class SessionStatus { NotLoaded, ContentUnavailable, Ready };
 struct View {
     bool available=false,scanned=false,own_car=false;
+    SessionStatus status=SessionStatus::NotLoaded;
     std::uint64_t session=0;
     std::vector<Point> points;
     std::vector<Task> tasks;

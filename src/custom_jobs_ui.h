@@ -179,7 +179,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     const auto* destination = find_company(destination_id);
     if(destination && !receiver_allowed(*destination)){destination_city.clear();destination_id.clear();}
     ImGui::BeginDisabled(!state->delivery_time_supported);
-    ImGui::Checkbox(tr("Delivery time x4 (trucks only)","Время на доставку ×4 (только грузовики)"),&delivery_time_x4);
+    ImGui::Checkbox(tr("Delivery time x4","Время на доставку ×4"),&delivery_time_x4);
     if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("%s",state->delivery_time_supported?
         tr("Applies to this created job, with a supplied or your own trailer. Offer availability remains 48 hours.","Применяется к создаваемому заказу с игровым или своим прицепом. Доступность заказа на рынке остаётся 48 часов."):
         tr("Extended delivery time is unavailable for this game code.","Увеличение срока доставки недоступно для этого кода игры."));

@@ -297,6 +297,11 @@ bool InitializeProfile()
     if(!ResolveCreationCode(reinterpret_cast<const unsigned char*>(g_module_base),nt->OptionalHeader.SizeOfImage,*g_profile,g_creation_code,reason))
         Log(("Custom job creation disabled before patching: "+reason).c_str());
 #endif
+#ifdef CARGO_CONTROL_ROAD_TRIP
+    // Road Trip shares the native event scheduler with truck offers. Resolve its
+    // original code before installing any of our patches or MinHook detours.
+    road_trip::Initialize(g_module_base,nt->OptionalHeader.SizeOfImage,g_game,*g_profile,g_creation_code,Log);
+#endif
     if (!PatchGeneratorBudget()) {
         Log("generator patch failed; profile disabled.");
         return false;
@@ -323,9 +328,6 @@ bool InitializeProfile()
     delivery_time::Initialize(g_module_base,nt->OptionalHeader.SizeOfImage,g_creation_code,g_plugin_dir,Log);
     custom_jobs::Initialize(g_module_base, nt->OptionalHeader.SizeOfImage, Log);
     custom_jobs::EnableCreation(*g_profile,g_creation_code,{PrepareSpecificOwned,GenerateSpecificOwned});
-#endif
-#ifdef CARGO_CONTROL_ROAD_TRIP
-    road_trip::Initialize(g_module_base,nt->OptionalHeader.SizeOfImage,g_game,*g_profile,g_creation_code,Log);
 #endif
     Log((std::string(g_profile->name) + " profile active. Cargo Control v" CARGO_CONTROL_VERSION_TEXT
          ". Control menu Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());

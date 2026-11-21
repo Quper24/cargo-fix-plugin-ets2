@@ -104,9 +104,17 @@ bool Install(std::uintptr_t economy,std::uintptr_t generator,std::uint64_t slot,
     Release(old,offers->vtable);return true;
 }
 bool Contains(const std::vector<std::string>& values,const std::string& value){return std::find(values.begin(),values.end(),value)!=values.end();}
+bool ContentLoaded(std::uintptr_t economy){
+    if(!supported||!Generator(economy))return false;
+    const auto registry=Get<std::uintptr_t>(base+code.registry);
+    const auto storage=Get<std::uintptr_t>(registry+0x2ff8);
+    const auto data=Get<std::uintptr_t>(storage+0x8d0);
+    const auto count=Get<std::uint64_t>(storage+0x8d8);
+    return storage&&count&&count<=10000&&data&&ReadableMemory(data,count*sizeof(std::uintptr_t));
+}
 }
 #ifdef CARGO_CONTROL_CATALOG_PREVIEW
-void Preview(View fixture){ats=true;fixture.available=true;fixture.scanned=true;fixture.own_car=true;Publish(std::make_shared<View>(std::move(fixture)));}
+void Preview(View fixture){ats=true;fixture.available=true;fixture.scanned=true;fixture.own_car=true;fixture.status=SessionStatus::Ready;Publish(std::make_shared<View>(std::move(fixture)));}
 #endif
 std::shared_ptr<const View> Snapshot(){std::lock_guard<std::mutex> lock(mutex);return view;}
 bool Visible(){return ats;}
@@ -123,13 +131,22 @@ void Initialize(std::uintptr_t module,std::size_t size,GameKind game,const GameP
 void Reset(){batch={};points.clear();tasks.clear();last_economy=last_car=0;++epoch;{std::lock_guard<std::mutex> lock(mutex);pending.reset();}
     auto next=std::make_shared<View>();next->session=epoch;next->available=supported;Publish(std::move(next));}
 void Observe(std::uintptr_t economy,bool ready){
+    if(!ats)return;
     const auto car=ready&&supported?Car(economy):0;
     if((last_economy&&(!ready||last_economy!=economy))||(last_car&&last_car!=car))Reset();
     last_economy=ready?economy:0;last_car=car;
+    const auto status=!ready?SessionStatus::NotLoaded:ContentLoaded(economy)?SessionStatus::Ready:SessionStatus::ContentUnavailable;
+    const auto current=Snapshot();
+    if(current->status!=status){
+        auto next=std::make_shared<View>(*current);next->status=status;Publish(std::move(next));
+        if(log)log(status==SessionStatus::Ready?"Road Trip session content detected: native job definitions and generator are loaded.":
+            status==SessionStatus::ContentUnavailable?"Road Trip session content is unavailable; load the DLC/content in a game profile.":"Road Trip is waiting for a loaded session.");
+    }
 }
 void Scan(std::uintptr_t economy){
-    if(!supported||!Generator(economy)){Message("Road Trip data is unavailable. Load a Road Trip profile.","Данные Road Trip недоступны. Загрузите профиль Road Trip.");return;}
+    if(!ContentLoaded(economy)){Message("Road Trip data is unavailable. Load a profile with Road Trip content enabled.","Данные Road Trip недоступны. Загрузите профиль с подключённым Road Trip.");return;}
     points.clear();tasks.clear();auto next=std::make_shared<View>();next->available=true;next->session=epoch;
+    next->status=SessionStatus::Ready;
     const auto car=Car(economy);std::vector<std::uintptr_t> car_tags;
     next->own_car=car&&Tags(car,car_tags);
     const auto registry=Get<std::uintptr_t>(base+code.registry);
@@ -243,7 +260,9 @@ void Tick(std::uintptr_t economy){
 void Draw(float scale,bool russian){
     auto tr=[&](const char* en,const char* ru){return russian?ru:en;};const auto state=Snapshot();
     ImGui::SetWindowFontScale(.5f*scale);
-    if(!state->available){ImGui::TextWrapped("%s",tr("Road Trip is unavailable for this game code. See game.log.txt.","Road Trip недоступен для этой сборки игры. Подробности в game.log.txt."));return;}
+    if(!state->available){ImGui::TextWrapped("%s",tr("Could not initialize the Road Trip module. See game.log.txt.","Не удалось подключить модуль Road Trip. Подробности в game.log.txt."));return;}
+    if(state->status==SessionStatus::NotLoaded){ImGui::TextWrapped("%s",tr("Load your game profile to detect Road Trip content.","Загрузите игровой профиль, чтобы проверить доступность Road Trip."));return;}
+    if(state->status==SessionStatus::ContentUnavailable){ImGui::TextWrapped("%s",tr("Road Trip content is not loaded. Check that the DLC is available and enabled, then load a Road Trip profile.","Данные Road Trip не загружены. Проверьте, что DLC доступен и подключён, затем загрузите профиль Road Trip."));return;}
     const ImVec4 green(.435f,.827f,.294f,1);
     ImGui::PushStyleColor(ImGuiCol_Button,green);ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1));
     if(ImGui::Button(tr("Read Road Trip session","Считать сессию Road Trip"),{286*scale,36*scale}))overlay_ui::Request(5);
