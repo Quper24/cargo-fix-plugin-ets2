@@ -15,7 +15,7 @@ struct View {
     std::vector<Task> tasks;
     std::string message;
 };
-struct Request {std::uint64_t session=0;std::string task,source,target;bool replace=false;};
+struct Request {std::uint64_t session=0;std::string task,source,target;};
 using Logger=void(*)(const char*);
 void Initialize(std::uintptr_t base,std::size_t size,GameKind game,const GameProfile& profile,const CreationCode& allocation,Logger logger);
 bool Visible();

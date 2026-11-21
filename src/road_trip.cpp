@@ -209,8 +209,8 @@ void Create(std::uintptr_t economy){
     std::uint64_t slot=offers->count;auto now=Get<std::uint32_t>(economy+0x19c);
     // Initial three slots are reserved by the native generator for local special tasks.
     for(std::uint64_t i=3;i<offers->count;++i)if(Get<std::uint32_t>(offers->data[i]+0x80)<=now){slot=i;break;}
-    if(slot==offers->count&&request->replace&&offers->count>3)slot=3;
-    if(slot==offers->count){Message("Allow replacing one offer, or wait for an empty slot.","Разрешите замену одного предложения или дождитесь свободного места.");return;}
+    if(slot==offers->count&&offers->count>3)slot=3;
+    if(slot==offers->count){Message("No ordinary Road Trip offer slot is available.","Нет доступного обычного слота предложения Road Trip.");return;}
     auto offer=Allocate();if(!offer){Message("Cannot allocate Road Trip offer.","Не удалось выделить предложение Road Trip.");return;}
     auto format=Native<void(__cdecl*)(std::uintptr_t,const char*,...)>(code.format_text);
     auto write_point=[&](unsigned offset,const Point& point){const auto dot=point.id.find('.');auto depot=point.id.substr(0,dot);format(offer+offset,reinterpret_cast<const char*>(base+code.point_format),depot.c_str(),point.city.c_str());};
@@ -273,8 +273,8 @@ void Draw(float scale,bool russian){
     if(!state->scanned){ImGui::TextWrapped("%s",tr("Select your car and read the loaded session. The window will reopen automatically.","Выберите свою машину и считайте загруженную сессию. Окно откроется автоматически."));return;}
     if(!state->own_car){ImGui::TextWrapped("%s",tr("Select your own car in Road Trip, then read the session again.","Выберите собственную машину в Road Trip и считайте сессию повторно."));return;}
     static std::uint64_t seen=UINT64_MAX;static std::string task,from,to,from_city,to_city;
-    static char search[128]{};static bool replace=false;
-    if(seen!=state->session){seen=state->session;task.clear();from.clear();to.clear();from_city.clear();to_city.clear();search[0]=0;replace=false;}
+    static char search[128]{};
+    if(seen!=state->session){seen=state->session;task.clear();from.clear();to.clear();from_city.clear();to_city.clear();search[0]=0;}
     ImGui::Text("%s: %zu   %s: %zu",tr("Depots","Базы"),state->points.size(),tr("Tasks for your car","Задания для вашей машины"),state->tasks.size());
     ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##rt-search",tr("Search names","Поиск по названиям"),search,sizeof(search));
     const Task* selected=nullptr;for(const auto& item:state->tasks)if(item.id==task)selected=&item;
@@ -305,10 +305,10 @@ void Draw(float scale,bool russian){
         ImGui::EndGroup();ImGui::PopID();
     };
     point_fields(true);point_fields(false);
-    ImGui::Checkbox(tr("Allow replacing one existing Road Trip offer","Разрешить замену одного предложения Road Trip"),&replace);
+    ImGui::TextWrapped("%s",tr("One existing offer may be replaced automatically.","Одно существующее предложение может быть заменено автоматически."));
     const bool valid=selected&&!from.empty()&&!to.empty()&&from!=to;
     ImGui::BeginDisabled(!valid);
-    if(ImGui::Button(tr("Create Road Trip job","Создать заказ Road Trip"),{260*scale,36*scale})&&Queue({state->session,task,from,to,replace}))overlay_ui::Request(7);
+    if(ImGui::Button(tr("Create Road Trip job","Создать заказ Road Trip"),{260*scale,36*scale})&&Queue({state->session,task,from,to}))overlay_ui::Request(7);
     ImGui::EndDisabled();
     if(!state->message.empty())ImGui::TextWrapped("%s",state->message.c_str());
 }
