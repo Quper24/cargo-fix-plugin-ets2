@@ -9,6 +9,7 @@ struct JobRequest {
     Market market=Market::Freight;
     std::string origin, cargo, destination;
     bool allow_replace=false;
+    bool delivery_time_x4=false;
 };
 enum class CreateStatus {
     Created, AlreadyPresent, Unsupported, NotReady, Cancelled, InvalidSelection,

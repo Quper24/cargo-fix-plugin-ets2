@@ -15,12 +15,13 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     static std::array<char, 128> search{};
     static int market = 0;
     static bool allow_replace=false;
+    static bool delivery_time_x4=false;
     static std::string request_error;
     if (session != state->session) {
         session = state->session;
         origin_city.clear(); origin_id.clear(); cargo_id.clear(); destination_city.clear(); destination_id.clear();
         search.fill(0);
-        allow_replace=false;request_error.clear();
+        allow_replace=false;delivery_time_x4=false;request_error.clear();
     }
     ImGui::SetWindowFontScale(scale * .5f);
     const ImVec4 scan_color(brand_palette::Red/255.f,brand_palette::Green/255.f,brand_palette::Blue/255.f,1);
@@ -171,11 +172,18 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     }
     const auto* destination = find_company(destination_id);
     if(destination && !receiver_allowed(*destination)){destination_city.clear();destination_id.clear();}
-    if(market==0)ImGui::Checkbox(tr("Allow replacing one source-company offer","Разрешить замену одного предложения на базе отправления"),&allow_replace);
+    if(market==0){ImGui::Checkbox(tr("Allow replacing one source-company offer","Разрешить замену одного предложения на базе отправления"),&allow_replace);ImGui::SameLine(0,16*scale);}
+    ImGui::BeginDisabled(!state->delivery_time_supported);
+    ImGui::Checkbox(tr("Delivery time x4 (trucks only)","Время на доставку ×4 (только грузовики)"),&delivery_time_x4);
+    if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("%s",state->delivery_time_supported?
+        tr("Applies to this created job, with a supplied or your own trailer. Offer availability remains 48 hours.","Применяется к создаваемому заказу с игровым или своим прицепом. Доступность заказа на рынке остаётся 48 часов."):
+        tr("Extended delivery time is unavailable for this game code.","Увеличение срока доставки недоступно для этого кода игры."));
+    ImGui::EndDisabled();
     ImGui::TextWrapped("%s",tr("Select your companies and a compatible cargo. Accept the created offer from its market.",
                               "Выберите базы и подходящий прицепу груз. Готовое предложение можно принять на соответствующем рынке."));
     if(!state->creation_supported)ImGui::TextDisabled("%s",tr("Native job creation is unavailable for this game code.","Создание заказа недоступно для этого кода игры."));
     JobRequest request{state->session,market==1?Market::OwnedTrailer:Market::Freight,origin_id,cargo_id,destination_id,allow_replace};
+    request.delivery_time_x4=state->delivery_time_supported&&delivery_time_x4;
     const bool can_create=state->creation_supported && ValidSelection(catalog,request);
     ImGui::BeginDisabled(!can_create);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{12*scale,9*scale});

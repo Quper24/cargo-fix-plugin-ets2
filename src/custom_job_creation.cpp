@@ -1,6 +1,7 @@
 #include "custom_job_creation.h"
 #include "owned_offers.h"
 #include "custom_job_events.h"
+#include "delivery_time.h"
 #include <MinHook.h>
 #include <Windows.h>
 #include <atomic>
@@ -34,6 +35,7 @@ struct Selection {
     std::uintptr_t origin=0,destination=0,cargo=0,definition=0;
     std::uint32_t slot=0;
     bool physical=false,scheduled=false;
+    bool delivery_time_x4=false;
     DirectRouteRow direct_route;
 };
 thread_local Selection* selected=nullptr;
@@ -233,7 +235,10 @@ CreateStatus Owned(std::uintptr_t economy,Selection& selection,const std::string
     backend.prepare(selection.origin,economy);
     auto* offers=reinterpret_cast<Vector*>(selection.origin+0xa0);
     if(!ValidOfferVector(*offers))return CreateStatus::InvalidGameData;
-    for(std::uint64_t n=0;n<offers->count;++n)if(Matches(offers->data[n],selection.cargo,target,now))return CreateStatus::AlreadyPresent;
+    for(std::uint64_t n=0;n<offers->count;++n)if(Matches(offers->data[n],selection.cargo,target,now)){
+        if(selection.delivery_time_x4)delivery_time::Mark(economy,selection.origin,true,static_cast<std::uint32_t>(n),offers->data[n],true);
+        return CreateStatus::AlreadyPresent;
+    }
     reinterpret_cast<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(module+core.refill)(selection.origin,economy);
     std::uint64_t count=0;std::uintptr_t timers=0;
     if(!Get(selection.origin+0x50,count)||!count||count>10000||!Get(selection.origin+0x48,timers)||!Writable(timers,count*4)||!Writable(selection.origin+0x108,8))return CreateStatus::NoSlot;
@@ -252,6 +257,7 @@ CreateStatus Owned(std::uintptr_t economy,Selection& selection,const std::string
         if(!Get(offers->vtable+24,reserve)||!ReadableMemory(reserve,1)||!reinterpret_cast<Reserve>(reserve)(offers,offers->count+1))return CreateStatus::AllocationFailed;
     }
     if(!ValidOfferVector(*offers)||offers->count>=offers->capacity||!Writable(reinterpret_cast<std::uintptr_t>(offers->data+offers->count),8))return CreateStatus::AllocationFailed;
+    delivery_time::Mark(economy,selection.origin,true,static_cast<std::uint32_t>(offers->count),created.value,selection.delivery_time_x4);
     offers->data[offers->count++]=created.value;created.value=0;
     return CreateStatus::Created;
 }
@@ -268,7 +274,11 @@ CreateStatus Freight(std::uintptr_t economy,Selection& selection,const std::stri
         states.push_back(std::move(state));
     }
     const auto choice=ChooseFreightSlot(states,selection.cargo,target,now,replace);
-    if(choice.status!=CreateStatus::Created)return choice.status;
+    if(choice.status!=CreateStatus::Created){
+        if(choice.status==CreateStatus::AlreadyPresent&&selection.delivery_time_x4)
+            delivery_time::Mark(economy,selection.origin,false,static_cast<std::uint32_t>(choice.index),offers->data[choice.index],true);
+        return choice.status;
+    }
     selection.slot=static_cast<std::uint32_t>(choice.index);
     const auto address=reinterpret_cast<std::uintptr_t>(offers->data+choice.index);
     std::uintptr_t scheduler=0;
@@ -301,6 +311,7 @@ CreateStatus Freight(std::uintptr_t economy,Selection& selection,const std::stri
     const bool registered=std::any_of(after.begin(),after.end(),[&](const auto& event){return !previous(event.node)&&event.time==deadline;});
     if(!registered){for(const auto& event:after)if(!previous(event.node))RemoveEvent(scheduler,event.node);return CreateStatus::SchedulingFailed;}
     for(const auto& event:current)RemoveEvent(scheduler,event.node);
+    delivery_time::Mark(economy,selection.origin,false,selection.slot,created.value,selection.delivery_time_x4);
     temporary.committed=true;created.value=0;
     if(selection.physical)original_physical(selection.definition,economy,selection.slot);
     Release(temporary.old,offers->vtable);
@@ -352,6 +363,8 @@ CreateResult Execute(std::uintptr_t economy,std::uintptr_t pools,const JobReques
     if(!initialized)return result(CreateStatus::Unsupported);
     if(selected || !economy || !pools)return result(CreateStatus::NotReady);
     Selection selection;std::string target;
+    if(request.delivery_time_x4&&!delivery_time::Available())return result(CreateStatus::Unsupported);
+    selection.delivery_time_x4=request.delivery_time_x4;
     if(!LiveSelection(economy,pools,request,selection,target))return result(CreateStatus::InvalidSelection);
     if(logger)logger(("Targeted native request: source="+request.origin+", cargo="+request.cargo+", destination="+request.destination+
         ", market="+std::to_string(static_cast<int>(request.market))+".").c_str());

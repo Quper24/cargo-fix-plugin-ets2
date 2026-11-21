@@ -36,3 +36,6 @@ struct RoadTripCode {
 };
 bool ResolveRoadTripCode(const unsigned char* image,std::size_t size,GameKind game,
                          RoadTripCode& out,std::string& reason);
+struct DeliveryTimeCode {std::uint32_t freight_window=0,owned_window=0;};
+bool ResolveDeliveryTimeCode(const unsigned char* image,std::size_t size,const CreationCode& creation,
+                             DeliveryTimeCode& out,std::string& reason);

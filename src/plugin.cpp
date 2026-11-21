@@ -27,6 +27,7 @@
 #endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs.h"
+#include "delivery_time.h"
 #endif
 
 #include "scssdk_telemetry.h"
@@ -319,6 +320,7 @@ bool InitializeProfile()
     }
     freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
+    delivery_time::Initialize(g_module_base,nt->OptionalHeader.SizeOfImage,g_creation_code,g_plugin_dir,Log);
     custom_jobs::Initialize(g_module_base, nt->OptionalHeader.SizeOfImage, Log);
     custom_jobs::EnableCreation(*g_profile,g_creation_code,{PrepareSpecificOwned,GenerateSpecificOwned});
 #endif
@@ -521,6 +523,9 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     g_last_economy = economy;
     notifications::Tick();
     const bool ready = g_readiness.Observe(snapshot, valid, restarted);
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+    delivery_time::Observe(economy,ready);
+#endif
 #ifdef CARGO_CONTROL_ROAD_TRIP
     const bool road_was_busy=road_trip::Busy();road_trip::Observe(economy,ready);
     if(road_was_busy&&!road_trip::Busy()){overlay_ui::FinishAction();return;}
@@ -609,6 +614,7 @@ SCSAPI_VOID scs_telemetry_shutdown(void)
 #endif
     CancelOwnedRefresh();freight::Cancel();
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
+    delivery_time::Shutdown();
     custom_jobs::Shutdown();
 #endif
     RemoveAutomaticCargoHook();

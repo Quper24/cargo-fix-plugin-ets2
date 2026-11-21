@@ -32,6 +32,9 @@ namespace creation162 {
 namespace road_trip162 {
 #include "road_trip_signatures_162.inc"
 }
+namespace delivery_time162 {
+#include "delivery_time_signatures_162.inc"
+}
 struct SignatureSet {
     const char* name;
     const char* ets2_name;
@@ -364,6 +367,21 @@ bool ResolveCreationCode(const unsigned char* bytes,std::size_t size,const GameP
     out={resolved[owned_candidates_index],resolved[base_candidates_index],resolved[destinations_index],resolved[base_slot_index],
          resolved[base_factory_index],resolved[schedule_index],resolved[free_event_node_index],resolved[physical_update_index],index,array,prefix};
     return true;
+}
+bool ResolveDeliveryTimeCode(const unsigned char* bytes,std::size_t size,const CreationCode& creation,DeliveryTimeCode& out,std::string& reason){
+    out={};reason.clear();Image image{bytes,size};if(!image.Parse()){reason="invalid delivery-time PE";return false;}
+    using namespace delivery_time162;
+    std::vector<std::uint32_t> roots,symbols;
+    if(!ResolveSet(image,signatures,std::size(signatures),symbol_count,roots,symbols,reason))return false;
+    if(roots[freight_factory_index]!=creation.base_factory){reason="delivery-time factory differs from creation factory";return false;}
+    const auto freight=symbols[freight_vtable_symbol],owned=symbols[owned_vtable_symbol];
+    for(const auto pair:{std::make_pair(freight,roots[freight_window_index]),std::make_pair(owned,roots[owned_window_index])}){
+        if(!image.In(pair.first,0x70,IMAGE_SCN_MEM_READ,IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_WRITE)||
+           PointerRva(image,Read<std::uint64_t>(bytes+pair.first+0x68))!=pair.second){reason="invalid truck delivery-time vtable";return false;}
+    }
+    const PropertyCheck limits[]={{"time_lower_limit",0x110,0x27},{"time_upper_limit",0x114,0x27}};
+    if(!PropertyGroup(image,limits,std::size(limits))){reason="incompatible truck delivery-time metadata";return false;}
+    out={roots[freight_window_index],roots[owned_window_index]};return true;
 }
 bool ResolveRoadTripCode(const unsigned char* bytes,std::size_t size,GameKind game,RoadTripCode& out,std::string& reason) {
     out={};reason.clear();

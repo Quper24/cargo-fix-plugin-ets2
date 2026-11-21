@@ -3,6 +3,9 @@
 #include <Windows.h>
 #include "game_resolver.h"
 #include "custom_job_names.h"
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+#include "delivery_time.h"
+#endif
 #include <cstring>
 #include <mutex>
 #include <atomic>
@@ -66,6 +69,9 @@ void Reset() {
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
     next->creation_supported = creation_supported;
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+    next->delivery_time_supported=delivery_time::Available();
+#endif
     std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();view=std::move(next);
 }
 void Observe(std::uintptr_t economy, bool ready) {
@@ -90,6 +96,9 @@ void Scan(std::uintptr_t economy) {
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
     next->creation_supported = creation_supported;
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+    next->delivery_time_supported=delivery_time::Available();
+#endif
     std::map<std::pair<LabelKind,std::uintptr_t>,std::string> cache;
     LabelReader labels;
     if (name_code.localize) labels = [&](LabelKind kind,std::uintptr_t object) -> std::string {
@@ -222,6 +231,7 @@ void PreviewCatalog(Catalog catalog) {
     next->availability = Availability::Ready;
     next->names_supported = true;
     next->creation_supported = true;
+    next->delivery_time_supported = true;
     Publish(std::move(next));
 }
 #endif

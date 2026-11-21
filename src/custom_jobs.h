@@ -14,6 +14,7 @@ struct View {
     bool scanned = false;
     bool names_supported = false;
     bool creation_supported = false;
+    bool delivery_time_supported = false;
     bool has_creation_result = false;
     CreateResult creation_result;
     Availability availability = Availability::UnsupportedCode;

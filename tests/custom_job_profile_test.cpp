@@ -11,6 +11,7 @@
 #include <cstring>
 #define Check(value) do { if (!(value)) { std::fprintf(stderr,"Catalog profile check failed: %d\n",__LINE__); std::exit(1); } } while(0)
 #include "road_trip_factory_probe.h"
+#include "delivery_time_native_probe.h"
 struct Fixture {
     const char* name; const char* sha256;
     std::uint32_t generator, fill, pools, guard_rva;
@@ -145,6 +146,12 @@ int wmain(int argc, wchar_t** argv) {
         }
     }
     Check(changed && ResolveCatalogPools(image.data(),image.size(),pools,error));
+    DeliveryTimeCode delivery{};
+    if(!ResolveDeliveryTimeCode(image.data(),image.size(),creation,delivery,error)){std::fprintf(stderr,"Delivery time: %s\n",error.c_str());std::exit(1);}
+    CheckDeliveryWindows(image,delivery);
+    for(auto at:{delivery.freight_window+0x18,delivery.owned_window+0x19}){
+        image[at]^=1;DeliveryTimeCode rejected{};Check(!ResolveDeliveryTimeCode(image.data(),image.size(),creation,rejected,error));image[at]^=1;
+    }
     RoadTripCode road{};
     if(path.filename()==L"amtrucks.exe"){
         if(!ResolveRoadTripCode(image.data(),image.size(),GameKind::ATS,road,error)){
