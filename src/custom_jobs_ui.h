@@ -23,9 +23,18 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         allow_replace=false;request_error.clear();
     }
     ImGui::SetWindowFontScale(scale * .5f);
-    if (ImGui::Button(tr("Read loaded session", "Считать загруженную сессию"))) scan();
-    ImGui::SameLine();
+    const ImVec4 scan_color(brand_palette::Red/255.f,brand_palette::Green/255.f,brand_palette::Blue/255.f,1);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{16*scale,11*scale});
+    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign,{.5f,.5f});
+    ImGui::PushStyleColor(ImGuiCol_Button,scan_color);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(std::min(1.f,scan_color.x*1.08f),std::min(1.f,scan_color.y*1.08f),std::min(1.f,scan_color.z*1.08f),1));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(scan_color.x*.85f,scan_color.y*.85f,scan_color.z*.85f,1));
+    ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1));
+    if(ImGui::Button(tr("Read loaded session","Считать загруженную сессию"),{300*scale,40*scale}))scan();
+    ImGui::PopStyleColor(4);ImGui::PopStyleVar(2);
+    ImGui::SameLine(0,16*scale);
     ImGui::TextDisabled("%s", tr("Experimental", "Экспериментальная функция"));
+    ImGui::Dummy({0,4*scale});
     if (!state->supported) {
         ImGui::TextWrapped("%s", tr("Session catalog is unavailable for this game build.",
                                   "Для этой сборки игры чтение каталога пока недоступно."));
