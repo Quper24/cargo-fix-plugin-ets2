@@ -22,7 +22,7 @@
 #include "owned_offers.h"
 #include "frame_batch.h"
 #include "plugin_version.h"
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs.h"
 #endif
 
@@ -37,7 +37,7 @@ namespace {
 const GameProfile* g_profile = nullptr;
 GameProfile g_resolved_profile{};
 GameKind g_game = GameKind::Unknown;
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
 CreationCode g_creation_code{};
 #endif
 
@@ -124,7 +124,7 @@ void MatchTrailer(GameVector& offers, std::uintptr_t economy)
     }
     g_offer_trailers[vector_key] = key;
 }
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
 void PrepareSpecificOwned(std::uintptr_t company,std::uintptr_t economy) {
     auto& offers=*reinterpret_cast<GameVector*>(company+0xa0);
     if(ValidOfferVector(offers))MatchTrailer(offers,economy);
@@ -288,7 +288,7 @@ bool InitializeProfile()
         Log("game code signature mismatch; profile disabled before patching.");
         return false;
     }
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     g_creation_code={};
     if(!ResolveCreationCode(reinterpret_cast<const unsigned char*>(g_module_base),nt->OptionalHeader.SizeOfImage,*g_profile,g_creation_code,reason))
         Log(("Custom job creation disabled before patching: "+reason).c_str());
@@ -315,7 +315,7 @@ bool InitializeProfile()
         return false;
     }
     freight::Initialize(g_module_base, *g_profile, g_plugin_dir, Log);
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Initialize(g_module_base, nt->OptionalHeader.SizeOfImage, Log);
     custom_jobs::EnableCreation(*g_profile,g_creation_code,{PrepareSpecificOwned,GenerateSpecificOwned});
 #endif
@@ -329,7 +329,7 @@ bool OwnedRefreshBusy();
 void ResetSession()
 {
     overlay_ui::CancelPending();CancelOwnedRefresh();
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Reset();
 #endif
     g_limit.Reset();
@@ -402,7 +402,7 @@ void TickOwnedRefresh(std::uintptr_t economy){
     const auto refill=reinterpret_cast<RefillFn>(g_module_base+g_profile->refill);
     state.work.Step([&](std::uintptr_t company,std::size_t i){
         if (!company) return;
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
         if(custom_jobs::RoadTripOnly(company))return;
 #endif
         auto* offers = reinterpret_cast<GameVector*>(company + 0xA0);
@@ -425,7 +425,7 @@ void TickOwnedRefresh(std::uintptr_t economy){
                 (real_now + i * 2654435761ULL + attempt * 2246822519ULL + g_limit.Used() * 3266489917ULL) % 1000000);
             {
                 ManualGenerationScope manual(g_manual_call, g_generator_attempts, budget);
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
                 custom_jobs::creation::ManualMarketScope market_scope;
 #endif
                 g_original_generator(company, economy);
@@ -512,7 +512,7 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     g_last_economy = economy;
     notifications::Tick();
     const bool ready = g_readiness.Observe(snapshot, valid, restarted);
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Observe(economy, ready);
 #endif
     if(OwnedRefreshBusy() || freight::Busy()){
@@ -529,7 +529,7 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     const int action = overlay_ui::Tick(ready);
     struct FinishAction {int action;bool reopen=false;~FinishAction(){if(action && !OwnedRefreshBusy() && !freight::Busy())overlay_ui::FinishAction(reopen);}} finish{action};
     if (action && !ready) {
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
         custom_jobs::CancelCreation();
 #endif
         notifications::Show(notifications::Translate(L"ProfileNotReady",
@@ -538,7 +538,7 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
         Log("Manual request rejected: profile/economy is not ready.");
     } else if (action == 1) RefreshOwnedCargo(economy);
     else if (action == 2 && g_enabled) freight::Request(economy);
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     else if(action==3 && g_enabled){custom_jobs::Scan(economy);finish.reopen=true;}
     else if (action == 4 && g_enabled) {
         const auto result=custom_jobs::ExecuteCreation(economy);
@@ -577,7 +577,7 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 SCSAPI_VOID scs_telemetry_shutdown(void)
 {
     CancelOwnedRefresh();freight::Cancel();
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Shutdown();
 #endif
     RemoveAutomaticCargoHook();

@@ -29,7 +29,7 @@ void Publish(std::shared_ptr<View> next) {
     std::lock_guard<std::mutex> lock(mutex); view = std::move(next);
 }
 void UpdateTrailerCargos(View& next,std::uintptr_t economy){
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     const auto started=GetTickCount64();
     next.trailer_cargos=creation::ReadTrailerCargos(economy,pools,next.catalog);
     last_trailer=creation::TrailerIdentity(economy);
@@ -71,7 +71,7 @@ void Reset() {
 void Observe(std::uintptr_t economy, bool ready) {
     if (was_ready && (!ready || economy != last_economy)) Reset();
     was_ready = ready; last_economy = ready ? economy : 0;
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     if(ready && creation_supported){
         const auto current=Snapshot();
         if(current->scanned && (refresh_trailer.exchange(false) || creation::TrailerIdentity(economy)!=last_trailer)){
@@ -143,7 +143,7 @@ void Scan(std::uintptr_t economy) {
 }
 std::shared_ptr<const View> Snapshot() { std::lock_guard<std::mutex> lock(mutex); return view; }
 void EnableCreation(const GameProfile& core,const CreationCode& code,creation::Backend backend){
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     creation_supported=creation::Initialize(module,core,code,backend,log);
 #else
     (void)core;(void)code;(void)backend;creation_supported=false;
@@ -164,7 +164,7 @@ CreateResult ExecuteCreation(std::uintptr_t economy){
     if(!was_ready || economy!=last_economy)result.status=CreateStatus::NotReady;
     else if(request->session!=session)result.status=CreateStatus::Cancelled;
     else if(!creation_supported)result.status=CreateStatus::Unsupported;
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     else result=creation::Execute(economy,pools,*request);
 #endif
     const auto current=Snapshot();
@@ -210,7 +210,7 @@ bool ContainsName(std::string_view text, std::string_view query) {
     return false;
 }
 void Shutdown() {
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     creation::Shutdown();
 #endif
     creation_supported=false;pools=module=0;name_code={};log=nullptr;availability=Availability::UnsupportedCode;Reset();

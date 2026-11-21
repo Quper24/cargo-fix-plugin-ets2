@@ -4,7 +4,7 @@
 #include "notifications.h"
 #include "overlay_ui.h"
 #include "frame_batch.h"
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs.h"
 #endif
 #include <Windows.h>
@@ -143,7 +143,7 @@ void Step(std::uintptr_t economy){
     const auto fill=reinterpret_cast<RefreshCompany>(base+profile->fill_company);
     refresh.work.Step([&](std::uintptr_t company,std::size_t){
         if (!company) return;
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
         if(custom_jobs::RoadTripOnly(company))return;
 #endif
         const auto definition = At<std::uintptr_t>(company, 0x10);

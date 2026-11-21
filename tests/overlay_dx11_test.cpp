@@ -2,7 +2,7 @@
 #include "branding.h"
 #include "brand_palette.h"
 #include "menu_pointer.h"
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs.h"
 #endif
 #include <Windows.h>
@@ -91,7 +91,7 @@ int wmain(int argc,wchar_t** argv) {
     SetWindowPos(window,nullptr,0,0,1024,768,SWP_NOACTIVATE|SWP_NOZORDER);
     for(int i=0;i<3;++i)render(true);
     Capture(dev.Get(),gpu.Get(),chain.Get(),nullptr,true); // Exact same palette on an sRGB backbuffer.
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Catalog fixture;
     fixture.cargos.push_back({"cargo.mod_cargo9","Соль"});
     fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","FedEx",{"cargo.mod_cargo9"},{},"Анн-Арбор"});
