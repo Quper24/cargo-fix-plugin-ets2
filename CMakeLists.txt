@@ -17,7 +17,7 @@ target_include_directories(qs_imgui PUBLIC vendor/imgui)
 target_link_libraries(qs_imgui PUBLIC d3d11 dxgi d3dcompiler dwmapi)
 
 configure_file(src/branding.rc.in "${CMAKE_CURRENT_BINARY_DIR}/branding.rc" @ONLY)
-option(CARGO_CONTROL_DEVELOPMENT_BUILD "Add dev suffix to the version and DLL filename" ON)
+option(CARGO_CONTROL_DEVELOPMENT_BUILD "Add dev suffix to the version and DLL filename" OFF)
 set(CARGO_CONTROL_VERSION_SUFFIX "")
 set(CARGO_CONTROL_DLL_NAME "CargoControl")
 if(CARGO_CONTROL_DEVELOPMENT_BUILD)
