@@ -2,6 +2,11 @@
 #include "company_list.h"
 #include "refresh_cooldown.h"
 #include "notifications.h"
+#include "overlay_ui.h"
+#include "frame_batch.h"
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#include "custom_jobs.h"
+#endif
 #include <Windows.h>
 #include <array>
 #include <algorithm>
@@ -94,6 +99,12 @@ void __fastcall ScheduleBridge(std::uintptr_t scheduler, std::uintptr_t economy,
     schedule_hook.Original<Schedule>()(scheduler, economy, time, company, slot);
 }
 
+struct RefreshState {
+    FrameBatch work;
+    std::uintptr_t economy=0;
+    std::uint32_t deadline=0;
+    std::uint64_t started=0,refreshed=0,companies_refreshed=0,skipped_invalid=0;
+} refresh;
 void Run(std::uintptr_t economy) {
     if (!initialized || !economy) return;
     const auto now = At<std::uint32_t>(economy, 0x19c);
@@ -117,23 +128,27 @@ void Run(std::uintptr_t economy) {
             L"Список компаний недоступен. Подробности в game.log.txt."));
         return;
     }
-    const auto deadline = now + 48u * 60u;
-    const auto started = GetTickCount64();
-    std::uint64_t refreshed = 0, companies_refreshed = 0, skipped_invalid = 0;
-    notifications::Show(notifications::Translate(L"FreightGenerating",
-        L"Refreshing Freight market / Quick jobs offers…",
-        L"Обновление заказов рынка грузоперевозок и агентств…"));
-    Log("Freight / Quick jobs stock refresh started; no slot expansion.");
-    const auto* companies = reinterpret_cast<const std::uintptr_t*>(array);
-    using RefreshCompany = void(__fastcall*)(std::uintptr_t, std::uintptr_t);
-    const auto clear = reinterpret_cast<RefreshCompany>(base + profile->clear_company);
-    const auto fill = reinterpret_cast<RefreshCompany>(base + profile->fill_company);
-    for (std::uint64_t n = 0; n < count; ++n) {
-        const auto company = companies[n];
-        if (!company) continue;
+    refresh={};refresh.economy=economy;refresh.deadline=now+48u*60u;refresh.started=GetTickCount64();
+    refresh.work.Begin(reinterpret_cast<const std::uintptr_t*>(array),static_cast<std::size_t>(count));
+    overlay_ui::SetProgress(0,count);
+    Log("Freight / Quick jobs stock refresh started in frame batches; no slot expansion.");
+}
+void Step(std::uintptr_t economy){
+    if(!refresh.work.Active())return;
+    if(refresh.economy!=economy){refresh.work.Cancel();return;}
+    const auto deadline=refresh.deadline;const auto started=refresh.started;
+    auto& refreshed=refresh.refreshed;auto& companies_refreshed=refresh.companies_refreshed;auto& skipped_invalid=refresh.skipped_invalid;
+    using RefreshCompany=void(__fastcall*)(std::uintptr_t,std::uintptr_t);
+    const auto clear=reinterpret_cast<RefreshCompany>(base+profile->clear_company);
+    const auto fill=reinterpret_cast<RefreshCompany>(base+profile->fill_company);
+    refresh.work.Step([&](std::uintptr_t company,std::size_t){
+        if (!company) return;
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+        if(custom_jobs::RoadTripOnly(company))return;
+#endif
         const auto definition = At<std::uintptr_t>(company, 0x10);
         const auto context = At<std::uintptr_t>(company, 0x68);
-        if (!definition || !context || At<std::int32_t>(context, 8) >= 0) continue;
+        if (!definition || !context || At<std::int32_t>(context, 8) >= 0) return;
         const auto* existing = reinterpret_cast<const Vector*>(company + 0x78);
         // Do not attempt to refresh incompatible saved state produced by 0.4.
         // It must be replaced by a save from before the first F9 use.
@@ -142,7 +157,7 @@ void Run(std::uintptr_t economy) {
             if (existing->count > physical_nodes ||
                 At<std::uint64_t>(definition, 0xe0) > physical_nodes ||
                 At<std::uint32_t>(definition, 0xc0) > physical_nodes) {
-                ++skipped_invalid; continue;
+                ++skipped_invalid; return;
             }
         }
         manual_company = company; manual_deadline = deadline;
@@ -153,7 +168,7 @@ void Run(std::uintptr_t economy) {
         fill(company, economy);
         manual_company = 0;
         const auto* jobs = reinterpret_cast<const Vector*>(company + 0x78);
-        if (!jobs->data || jobs->count > 10000) continue;
+        if (!jobs->data || jobs->count > 10000) return;
         const auto* data = reinterpret_cast<const std::uintptr_t*>(jobs->data);
         unsigned valid = 0;
         for (std::uint64_t i = 0; i < jobs->count; ++i) {
@@ -166,7 +181,9 @@ void Run(std::uintptr_t economy) {
         }
         refreshed += valid;
         if (valid) ++companies_refreshed;
-    }
+    },[]{return GetTickCount64();});
+    overlay_ui::SetProgress(refresh.work.Done(),refresh.work.Total());
+    if(refresh.work.Active())return;
     cooldown.Start(GetTickCount64()); // Cooldown starts after completion, including empty results.
     wchar_t message[420];
     const auto format = notifications::Translate(L"FreightResult",
@@ -180,6 +197,7 @@ void Run(std::uintptr_t economy) {
     else if (!refreshed) result += notifications::Translate(L"FreightNotConsumed",
         L"\nNo offers were created.",
         L"\nНовые предложения не созданы.");
+    result+=notifications::Translate(L"ReopenFreightMarket",L"\nReopen the Freight market to see the updated offers.",L"\nЗаново откройте рынок грузоперевозок, чтобы увидеть обновлённые предложения.");
     notifications::Show(result);
     char log[280];
     sprintf_s(log, "Freight / Quick jobs stock refresh finished: refreshed=%llu, companies=%llu, skipped_invalid=%llu, cooldown_ms=5000, elapsed_ms=%llu.",
@@ -198,7 +216,10 @@ bool Initialize(std::uintptr_t module, const GameProfile& selected, const std::f
     Log("Freight / Quick jobs stock refresh enabled; physical slot counts remain native.");
     return true;
 }
-void Reset() { cooldown.Reset(); }
+void Reset() { refresh.work.Cancel();cooldown.Reset(); }
+void Cancel(){refresh.work.Cancel();manual_company=0;}
+bool Busy(){return refresh.work.Active();}
+void Tick(std::uintptr_t economy){Step(economy);}
 void PrepareForDriving() {}
 void Request(std::uintptr_t economy) {
     if (!initialized) {

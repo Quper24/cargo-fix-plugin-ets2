@@ -82,6 +82,7 @@ void Observe(std::uintptr_t economy, bool ready) {
 #endif
 }
 void RefreshTrailerCargos(){refresh_trailer=true;}
+bool RoadTripOnly(std::uintptr_t company){std::vector<std::string> parts;return pools && UnitName(Memory,pools,company,parts) && parts.size()==4 && RoadTripOnlyDepot(Memory,company,parts[2]);}
 void Scan(std::uintptr_t economy) {
     if (last_economy && last_economy != economy) Reset();
     last_economy = economy;
@@ -134,6 +135,7 @@ void Scan(std::uintptr_t economy) {
             ", cargos=" + std::to_string(next->catalog.cargos.size()) +
             ", skipped=" + std::to_string(next->catalog.skipped) + ". " + next->error;
         log(message.c_str());
+        if(next->catalog.excluded_road_trip)log(("Excluded Road Trip-only depots: "+std::to_string(next->catalog.excluded_road_trip)+".").c_str());
         if (next->names_supported) log(("Session display names: unresolved occurrences="+std::to_string(next->catalog.label_fallbacks)+".").c_str());
     }
     if(next->scanned){refresh_trailer=false;UpdateTrailerCargos(*next,economy);}

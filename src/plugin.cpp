@@ -20,6 +20,7 @@
 #include "game_profile.h"
 #include "game_resolver.h"
 #include "owned_offers.h"
+#include "frame_batch.h"
 #include "plugin_version.h"
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
 #include "custom_jobs.h"
@@ -323,9 +324,11 @@ bool InitializeProfile()
     return true;
 }
 
+void CancelOwnedRefresh();
+bool OwnedRefreshBusy();
 void ResetSession()
 {
-    overlay_ui::CancelPending();
+    overlay_ui::CancelPending();CancelOwnedRefresh();
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     custom_jobs::Reset();
 #endif
@@ -335,6 +338,15 @@ void ResetSession()
     Log("session limit reset (telemetry timer restart / economy change).");
 }
 
+struct OwnedRefreshState {
+    FrameBatch work;
+    std::uintptr_t economy=0,trailer=0;
+    std::uint32_t game_now=0,deadline=0;
+    std::uint64_t real_now=0,started=0,generated=0,full=0,eligible=0,duplicate_offers=0,excess_offers=0,native_calls=0,replaced=0,peak_company=0,preserved=0;
+    std::array<std::uint64_t,6> distribution{};
+} g_owned_refresh;
+void CancelOwnedRefresh(){g_owned_refresh.work.Cancel();}
+bool OwnedRefreshBusy(){return g_owned_refresh.work.Active();}
 void RefreshOwnedCargo(std::uintptr_t economy)
 {
     if (!g_enabled) return;
@@ -367,31 +379,45 @@ void RefreshOwnedCargo(std::uintptr_t economy)
         return;
     }
 
-    const auto deadline = g_limit.Deadline(game_now);
-
-    const auto started = GetTickCount64();
-    g_auto_expiry = deadline;
-    const auto refill = reinterpret_cast<RefillFn>(g_module_base + g_profile->refill);
-    const auto* companies = reinterpret_cast<const std::uintptr_t*>(array);
-    std::uint64_t generated = 0, full = 0, eligible = 0, duplicate_offers = 0, excess_offers = 0, native_calls = 0;
-    std::uint64_t replaced = 0, peak_company = 0;
-    std::array<std::uint64_t,6> distribution{};
-    notifications::Show(notifications::Translate(L"Generating", L"Refreshing owned-trailer cargo offers…", L"Обновление грузов для собственного прицепа…"));
-    Log("Owned cargo replacement started.");
-    for (std::uint64_t i = 0; i < count; ++i) {
-        const auto company = companies[i];
-        if (!company) continue;
+    g_owned_refresh={};
+    auto& state=g_owned_refresh;
+    state.economy=economy;state.trailer=TrailerKey(economy);state.game_now=game_now;
+    state.deadline=g_limit.Deadline(game_now);state.real_now=real_now;state.started=GetTickCount64();
+    state.work.Begin(reinterpret_cast<const std::uintptr_t*>(array),static_cast<std::size_t>(count));
+    overlay_ui::SetProgress(0,count);
+    Log("Owned cargo replacement started in frame batches; old offers survive empty generation.");
+}
+void TickOwnedRefresh(std::uintptr_t economy){
+    auto& state=g_owned_refresh;
+    if(!state.work.Active())return;
+    if(economy!=state.economy || TrailerKey(economy)!=state.trailer){
+        state.work.Cancel();notifications::Show(L"Обновление грузов остановлено: сессия или прицеп изменились.");return;
+    }
+    const auto deadline=state.deadline,game_now=state.game_now;
+    const auto real_now=state.real_now,started=state.started;
+    auto& generated=state.generated;auto& full=state.full;auto& eligible=state.eligible;
+    auto& duplicate_offers=state.duplicate_offers;auto& excess_offers=state.excess_offers;auto& native_calls=state.native_calls;
+    auto& replaced=state.replaced;auto& peak_company=state.peak_company;auto& distribution=state.distribution;
+    g_auto_expiry=deadline;
+    const auto refill=reinterpret_cast<RefillFn>(g_module_base+g_profile->refill);
+    state.work.Step([&](std::uintptr_t company,std::size_t i){
+        if (!company) return;
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+        if(custom_jobs::RoadTripOnly(company))return;
+#endif
         auto* offers = reinterpret_cast<GameVector*>(company + 0xA0);
-        if (!ValidOfferVector(*offers)) continue;
+        if (!ValidOfferVector(*offers)) return;
         refill(company, economy);
         const auto timer_count = *reinterpret_cast<std::uint64_t*>(company + 0x50);
         auto* timers = *reinterpret_cast<std::uint32_t**>(company + 0x48);
         if (!timer_count || timer_count > 10000 ||
-            !ReadableMemory(reinterpret_cast<std::uintptr_t>(timers), timer_count * sizeof(*timers))) continue;
+            !ReadableMemory(reinterpret_cast<std::uintptr_t>(timers), timer_count * sizeof(*timers))) return;
         ++eligible;
-        replaced += offers->count;
         const bool special_first_slot = *reinterpret_cast<std::uintptr_t*>(company + 0x108) != 0;
-        const auto cleaned = ReplaceOwnedOffers(*offers, timer_count, special_first_slot, [&](std::uint32_t budget, unsigned attempt) {
+        MatchTrailer(*offers,economy);
+        const auto previous_count=offers->count;
+        const std::vector<std::uint32_t> old_timers(timers,timers+timer_count);
+        const auto replacement = ReplaceOwnedOffersSafely(*offers, timer_count, special_first_slot, [&](std::uint32_t budget, unsigned attempt) {
             const auto old_count = offers->count;
             // Slot zero can be a fixed special offer. Reach the later native slots
             // with separate seeds, then normalize expiry and discard new duplicates.
@@ -399,6 +425,9 @@ void RefreshOwnedCargo(std::uintptr_t economy)
                 (real_now + i * 2654435761ULL + attempt * 2246822519ULL + g_limit.Used() * 3266489917ULL) % 1000000);
             {
                 ManualGenerationScope manual(g_manual_call, g_generator_attempts, budget);
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+                custom_jobs::creation::ManualMarketScope market_scope;
+#endif
                 g_original_generator(company, economy);
                 ++native_calls;
             }
@@ -408,14 +437,25 @@ void RefreshOwnedCargo(std::uintptr_t economy)
                 *reinterpret_cast<std::uint32_t*>(job + 0x48) = deadline;
                 *reinterpret_cast<std::uint32_t*>(job + 0x60) = deadline;
             }
-        }, ReleaseOffers);
-        duplicate_offers += cleaned.duplicates;
-        excess_offers += cleaned.excess;
+        },ReleaseOffers,[](GameVector& vector,std::uint64_t required){
+            if(vector.capacity>=required)return true;
+            using Reserve=bool(__fastcall*)(GameVector*,std::uint64_t);
+            if(!ReadableMemory(vector.vtable+24,8))return false;
+            const auto reserve=*reinterpret_cast<const std::uintptr_t*>(vector.vtable+24);
+            return ReadableMemory(reserve,1) && reinterpret_cast<Reserve>(reserve)(&vector,required);
+        });
+        if(!replacement.committed){std::copy(old_timers.begin(),old_timers.end(),timers);++g_owned_refresh.preserved;++distribution[0];return;}
+        replaced+=previous_count;
+        duplicate_offers += replacement.cleanup.duplicates;
+        excess_offers += replacement.cleanup.excess;
         generated += offers->count;
         peak_company = std::max(peak_company, offers->count);
         if (offers->count == 5) ++full;
         ++distribution[std::min<std::uint64_t>(offers->count, 5)];
-    }
+    },[]{return GetTickCount64();});
+    overlay_ui::SetProgress(state.work.Done(),state.work.Total());
+    if(state.work.Active())return;
+    Log(("Owned refresh preserved companies after empty generation: "+std::to_string(state.preserved)+".").c_str());
     if (generated) g_limit.RecordSuccess(game_now);
     wchar_t message[512];
     if (!generated) {
@@ -437,6 +477,7 @@ void RefreshOwnedCargo(std::uintptr_t economy)
         if (full < eligible) result += notifications::Translate(L"Partial",
             L"\nSome companies received fewer than five new offers.",
             L"\nУ части компаний меньше пяти новых предложений.");
+        result+=notifications::Translate(L"ReopenCargoMarket",L"\nReopen the cargo market to see the updated offers.",L"\nЗаново откройте биржу грузов, чтобы увидеть обновлённые предложения.");
         notifications::Show(result);
     }    char log[256];
     sprintf_s(log, "Owned cargo replacement finished. Replaced=%llu, generated=%llu, peak_company=%llu, five_offers=%llu/%llu, remaining=%u, elapsed_ms=%llu.",
@@ -474,9 +515,19 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     custom_jobs::Observe(economy, ready);
 #endif
+    if(OwnedRefreshBusy() || freight::Busy()){
+        if(!ready){
+            CancelOwnedRefresh();freight::Cancel();overlay_ui::FinishAction();
+            notifications::Show(notifications::Translate(L"RefreshInterrupted",L"Market refresh stopped because the loaded profile changed.",L"Обновление рынка остановлено: данные загруженного профиля изменились."));
+            Log("Frame-batched market refresh cancelled: profile is not ready.");return;
+        }
+        TickOwnedRefresh(economy);freight::Tick(economy);
+        if(!OwnedRefreshBusy() && !freight::Busy())overlay_ui::FinishAction();
+        return;
+    }
     // Consume every request even in menus: never defer it until a future drive/save.
     const int action = overlay_ui::Tick(ready);
-    struct FinishAction {int action;bool reopen=false;~FinishAction(){if(action)overlay_ui::FinishAction(reopen);}} finish{action};
+    struct FinishAction {int action;bool reopen=false;~FinishAction(){if(action && !OwnedRefreshBusy() && !freight::Busy())overlay_ui::FinishAction(reopen);}} finish{action};
     if (action && !ready) {
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
         custom_jobs::CancelCreation();
@@ -525,6 +576,7 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
 
 SCSAPI_VOID scs_telemetry_shutdown(void)
 {
+    CancelOwnedRefresh();freight::Cancel();
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     custom_jobs::Shutdown();
 #endif

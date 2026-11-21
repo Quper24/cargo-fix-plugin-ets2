@@ -61,14 +61,24 @@ int main() {
     Check(DecodeToken(World::Encode("mod_cargo9"))=="mod_cargo9");
     Check(DecodeToken(0).empty()); Check(DecodeToken(38).empty());
     World first;
+    const auto rt=first.Alloc(0x120),rt_def=first.Alloc(0x180),rt_context=first.Alloc(0x180);
+    first.Put(rt+0x10,rt_def);first.Put(rt+0x68,rt_context);
+    Check(RoadTripOnlyDepot(first.reader,rt,"pmrt1"));
+    Check(!RoadTripOnlyDepot(first.reader,rt,"nls_rd_wrk"));
+    Check(!RoadTripOnlyDepot(first.reader,rt,"my_pmrt1"));
+    first.Put<std::uint64_t>(rt_context+0xa8,1);Check(!RoadTripOnlyDepot(first.reader,rt,"pmrt1"));
+    first.Put<std::uint64_t>(rt_context+0xa8,0);first.Put<std::uint32_t>(rt_def+0xc0,1);
+    Check(!RoadTripOnlyDepot(first.reader,rt,"pmrt1"));
     const auto custom = first.Unit({"cargo","mod_cargo9"});
     const auto ordinary = first.Unit({"cargo","apples"});
     const auto source = first.CompanyUnit("mod_depot","mod_city",{custom,ordinary,custom},{ordinary});
     const auto target = first.CompanyUnit("mod_depot","other_city",{ordinary},{custom});
-    first.List(first.economy,0x28,{source,target,source});
+    const auto road_trip=first.CompanyUnit("pmrt1","road_city",{},{});
+    first.List(first.economy,0x28,{source,target,source,road_trip});
     Catalog catalog; std::string error;
     Check(BuildCatalog(first.reader,first.economy,first.pools,catalog,error));
     Check(error.empty() && catalog.companies.size()==2 && catalog.cargos.size()==2);
+    Check(catalog.excluded_road_trip==1);
     const auto& from = catalog.companies[0]; const auto& to = catalog.companies[1];
     Check(from.id=="company.volatile.mod_depot.mod_city" && from.outgoing.size()==2);
     Check(to.name==from.name && to.city!=from.city); // Distinct bases with the same brand.

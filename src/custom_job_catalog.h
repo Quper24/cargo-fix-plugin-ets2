@@ -18,10 +18,21 @@ struct Catalog {
     std::vector<Cargo> cargos;
     std::uint64_t skipped = 0;
     std::uint64_t label_fallbacks = 0;
+    std::uint64_t excluded_road_trip = 0;
 };
 template<class T> bool Read(const Reader& reader, std::uintptr_t address, T& value) {
     value = {};
     return address && address <= UINTPTR_MAX - sizeof(T) && reader(address, &value, sizeof(T));
+}
+// Verified Road Trip placeholder depots in the loaded mod map. Match internal
+// ids and empty freight definitions, never translated names such as "Roads".
+inline bool RoadTripOnlyDepot(const Reader& reader,std::uintptr_t company,const std::string& id){
+    if(id.size()!=5 || id.compare(0,4,"pmrt") || id[4]<'1' || id[4]>'6' || !company || company>UINTPTR_MAX-0x70)return false;
+    std::uintptr_t context=0,definition=0;std::uint64_t outgoing=0,incoming=0;std::uint32_t parking=0;
+    return Read(reader,company+0x68,context) && context && context<=UINTPTR_MAX-0xd8 &&
+        Read(reader,company+0x10,definition) && definition && definition<=UINTPTR_MAX-0xc8 &&
+        Read(reader,context+0xa8,outgoing) && !outgoing && Read(reader,context+0xd0,incoming) && !incoming &&
+        Read(reader,definition+0xc0,parking) && !parking;
 }
 inline std::string DecodeToken(std::uint64_t token) {
     constexpr char alphabet[] = "\0" "0123456789abcdefghijklmnopqrstuvwxyz_";
@@ -102,6 +113,7 @@ inline bool BuildCatalog(const Reader& reader, std::uintptr_t economy, std::uint
             !UnitName(reader, pools, company, parts) || parts.size() != 4 ||
             parts[0] != "company" || parts[1] != "volatile") { ++result.skipped; continue; }
         entry.id = Join(parts); entry.city = parts[3]; entry.name = parts[2];
+        if(RoadTripOnlyDepot(reader,company,parts[2])){++result.excluded_road_trip;continue;}
         entry.city_name = entry.city;
         if (labels) {
             auto company_name = labels(LabelKind::Company, context);

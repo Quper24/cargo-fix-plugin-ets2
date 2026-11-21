@@ -37,6 +37,7 @@ struct Selection {
     DirectRouteRow direct_route;
 };
 thread_local Selection* selected=nullptr;
+thread_local bool manual_market=false;
 struct SelectionScope {Selection* previous;explicit SelectionScope(Selection& value):previous(selected){selected=&value;}~SelectionScope(){selected=previous;}};
 bool Memory(std::uintptr_t address,void* out,std::size_t length){
     if(!ReadableMemory(address,length))return false;std::memcpy(out,reinterpret_cast<const void*>(address),length);return true;
@@ -94,7 +95,7 @@ std::uint64_t __fastcall DestinationBridge(std::uintptr_t company,Vector* values
     if(selected && selected->market==Market::OwnedTrailer && selected->origin==company && selected->cargo==cargo){
         return SetBorrowedCandidate(values,reinterpret_cast<std::uintptr_t>(&selected->direct_route))?UINT64_MAX:0;
     }
-    const auto result=original_destinations(company,values,unused,context,cargo,filter,limit,trailer);
+    const auto result=original_destinations(company,values,unused,context,cargo,filter,limit,manual_market?0:trailer);
     if(selected && selected->origin==company && selected->cargo==cargo)return FilterDestinations(values,result,selected->destination);
     return result;
 }
@@ -188,6 +189,7 @@ bool LiveSelection(std::uintptr_t economy,std::uintptr_t pools,const JobRequest&
     for(const auto company:companies){
         if(!UnitName(Memory,pools,company,parts))continue;
         const auto id=Join(parts);
+        if(parts.size()==4 && RoadTripOnlyDepot(Memory,company,parts[2]))continue;
         if(id==request.origin)result.origin=company;
         if(id==request.destination)result.destination=company;
         if(result.origin && (request.destination.empty() || result.destination))break;
@@ -326,6 +328,8 @@ void Shutdown(){
     module=0;core={};code={};backend={};logger=nullptr;
 }
 std::uintptr_t TrailerIdentity(std::uintptr_t economy){return initialized?TrailerData(economy):0;}
+ManualMarketScope::ManualMarketScope():previous(manual_market){manual_market=true;}
+ManualMarketScope::~ManualMarketScope(){manual_market=previous;}
 TrailerCargos ReadTrailerCargos(std::uintptr_t economy,std::uintptr_t pools,const Catalog& catalog){
     TrailerCargos result;
     if(!initialized)return result;

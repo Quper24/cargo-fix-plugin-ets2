@@ -33,7 +33,9 @@ std::recursive_mutex mutex;
 std::atomic<bool> stopping{true};
 OperationFeedback operation;
 bool busy_drawn=false,reopen_catalog=false;
+IDXGISwapChain* busy_chain=nullptr;
 int menu_page=0;
+std::uint64_t progress_done=0,progress_total=0;
 std::atomic<unsigned> callbacks{0};
 Logger logger = nullptr;
 std::filesystem::path ini;
@@ -293,8 +295,15 @@ void DrawBusy(){
                   Tr("Creating job...","Создание заказа...");
     draw->AddText(font,20*scale,{p.x+72*scale,p.y+34*scale},white,title);
     const char* body=action==3?Tr("Reading cities, companies and cargo. The order window will reopen automatically. Please wait.","Считываю города, базы и грузы. Окно заказа откроется автоматически после завершения. Пожалуйста, подождите."):
-        Tr("Preparing offers. Please wait for the result.","Подготавливаю предложения. Пожалуйста, дождитесь результата.");
+        Tr("Updating offers. Please wait.","Обновление выполняется. Пожалуйста, подождите.");
     draw->AddText(font,17*scale,{p.x+28*scale,p.y+91*scale},muted,body,nullptr,(size.x-56*scale));
+    if(progress_total){
+        char count[160];sprintf_s(count,Tr("Companies processed: %llu / %llu","Обработано баз: %llu из %llu"),progress_done,progress_total);
+        draw->AddText(font,15*scale,{p.x+28*scale,p.y+124*scale},muted,count);
+        const ImVec2 left{p.x+28*scale,p.y+151*scale},right{p.x+size.x-28*scale,p.y+157*scale};
+        draw->AddRectFilled(left,right,IM_COL32(40,40,40,255),3*scale);
+        draw->AddRectFilled(left,{left.x+(right.x-left.x)*float(progress_done)/float(progress_total),right.y},green,3*scale);
+    }
     ImGui::End();
 }
 void DrawNotice() {
@@ -377,7 +386,7 @@ HRESULT STDMETHODCALLTYPE PresentBridge(IDXGISwapChain* chain,UINT sync,UINT fla
     const HRESULT result=previous_present(chain,sync,flags);
     if(SUCCEEDED(result) && !(flags&DXGI_PRESENT_TEST)){
         std::lock_guard<std::recursive_mutex> guard(mutex);
-        if(busy_drawn)operation.Presented();busy_drawn=false;
+        if(busy_drawn && busy_chain==chain){operation.Presented();busy_drawn=false;busy_chain=nullptr;}
     }
     if(result==DXGI_ERROR_DEVICE_REMOVED || result==DXGI_ERROR_DEVICE_RESET) {
         std::lock_guard<std::recursive_mutex> guard(mutex);ReleaseRenderer();
@@ -428,7 +437,7 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     gpu->OMSetRenderTargets(8,previous,depth.Get());for(auto* view:previous)if(view)view->Release();
     ++rendered;
-    busy_drawn=loading;
+    busy_drawn=loading;busy_chain=loading?chain:nullptr;
     if(allow_hidden && loading)operation.Presented(); // Offscreen tests simulate the successful present.
 }
 bool Initialize(const std::filesystem::path& directory,Logger log,bool install_hook) {
@@ -437,7 +446,7 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
     cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,read_ini.c_str()));
     freight=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Freight",0,read_ini.c_str()));
     if(cargo==hotkeys::Menu)cargo=0;if(!hotkeys::PairAllowed(cargo,freight))freight=0;
-    stopping=false;operation.Complete();busy_drawn=reopen_catalog=false;menu_page=0;menu=false;capture=0;rendered=0;present_calls=0;input_calls=0;
+    stopping=false;operation.Complete();busy_chain=nullptr;busy_drawn=reopen_catalog=false;menu_page=0;menu=false;capture=0;rendered=0;present_calls=0;input_calls=0;
     if(!install_hook)return true;
     WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"QSCargoDxProbe";
     RegisterClassW(&cls);HWND probe=CreateWindowExW(0,cls.lpszClassName,L"",WS_POPUP,0,0,8,8,nullptr,nullptr,cls.hInstance,nullptr);
@@ -471,10 +480,14 @@ void Request(int action) {
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     allowed=allowed || action==3 || action==4;
 #endif
-    if(allowed && operation.Request(action)){notice.clear();busy_drawn=false;}
+    if(allowed && operation.Request(action,GetTickCount64())){
+        notice.clear();busy_drawn=false;busy_chain=nullptr;progress_done=progress_total=0;
+        Log(("Operation queued: action="+std::to_string(action)+"; waiting for visible feedback frames.").c_str());
+    }
 }
-int Tick(bool ready) {std::lock_guard<std::recursive_mutex> guard(mutex);return operation.Take(!ready);}
-void FinishAction(bool show_catalog){std::lock_guard<std::recursive_mutex> guard(mutex);operation.Complete();busy_drawn=false;reopen_catalog=show_catalog;}
+int Tick(bool ready) {std::lock_guard<std::recursive_mutex> guard(mutex);const auto action=operation.Take(!ready,GetTickCount64());if(action)Log(("Operation started after feedback: action="+std::to_string(action)+".").c_str());return action;}
+void FinishAction(bool show_catalog){std::lock_guard<std::recursive_mutex> guard(mutex);if(operation.Active())Log("Operation feedback completed.");operation.Complete();busy_drawn=false;busy_chain=nullptr;progress_done=progress_total=0;reopen_catalog=show_catalog;}
+void SetProgress(std::uint64_t done,std::uint64_t total){std::lock_guard<std::recursive_mutex> guard(mutex);progress_total=total;progress_done=std::min(done,total);}
 void CancelPending(){FinishAction(false);}
 Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr,operation.Active(),menu}; }
 void Shutdown() {
@@ -485,7 +498,7 @@ void Shutdown() {
     while(callbacks.load())Sleep(1);
     std::lock_guard<std::recursive_mutex> guard(mutex);ReleaseRenderer();
     RemoveMouseHooks();if(hook_owned)MH_RemoveHook(present_site);if(minhook_owned)MH_Uninitialize();hook_owned=minhook_owned=false;
-    operation.Complete();busy_drawn=reopen_catalog=false;notice.clear();keys.fill(false);menu_was_down=cargo_down=freight_down=false;
+    operation.Complete();busy_chain=nullptr;busy_drawn=reopen_catalog=false;notice.clear();keys.fill(false);menu_was_down=cargo_down=freight_down=false;
     previous_present=nullptr;present_site=nullptr;logger=nullptr;
 }
 }

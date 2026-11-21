@@ -166,3 +166,25 @@ NewOfferCleanup ReplaceOwnedOffers(GameOfferVector& offers, std::uint64_t timers
     }
     return result;
 }
+
+struct SafeReplacement {NewOfferCleanup cleanup;bool committed=false;};
+template<class Generate,class Release,class Reserve>
+SafeReplacement ReplaceOwnedOffersSafely(GameOfferVector& offers,std::uint64_t timers,bool special,
+                                         Generate generate,Release release,Reserve reserve){
+    if(!timers || !ValidOfferVector(offers))return {};
+    const auto previous=offers;
+    std::array<std::uintptr_t,16> storage{};
+    offers={previous.vtable,storage.data(),0,storage.size()};
+    struct Restore {GameOfferVector& target;GameOfferVector previous;bool restored=false;
+        void Now(){if(!restored){target=previous;restored=true;}}
+        ~Restore(){Now();}
+    } restore{offers,previous};
+    const auto cleanup=ReplaceOwnedOffers(offers,timers,special,generate,release);
+    auto generated=offers;
+    restore.Now();
+    if(!generated.count)return {cleanup,false};
+    if(!reserve(offers,generated.count)){release(generated);return {cleanup,false};}
+    release(offers);
+    std::copy_n(generated.data,generated.count,offers.data);offers.count=generated.count;
+    return {cleanup,true};
+}

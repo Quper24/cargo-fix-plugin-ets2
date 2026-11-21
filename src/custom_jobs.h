@@ -27,6 +27,7 @@ void Reset();
 void Observe(std::uintptr_t economy, bool ready);
 void Scan(std::uintptr_t economy);
 void RefreshTrailerCargos();
+bool RoadTripOnly(std::uintptr_t company);
 void EnableCreation(const GameProfile& core,const CreationCode& code,creation::Backend backend);
 bool QueueCreation(const JobRequest& request);
 void CancelCreation();

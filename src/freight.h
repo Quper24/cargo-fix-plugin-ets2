@@ -8,5 +8,8 @@ bool Initialize(std::uintptr_t module, const GameProfile& profile, const std::fi
 void Reset();
 void PrepareForDriving();
 void Request(std::uintptr_t economy);
+void Tick(std::uintptr_t economy);
+bool Busy();
+void Cancel();
 void Shutdown();
 }

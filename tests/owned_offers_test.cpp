@@ -164,6 +164,22 @@ int main() {
     unsigned failed_attempts = 0;
     RefillEmptyOwnedOffers(empty, second_deadline, [&] { ++failed_attempts; }, release_batch);
     Check(failed_attempts == 1 && empty.count == 0);
+    // Failed refreshes keep old offers, including allocation failures after generation.
+    pointers={a.Address(),b.Address()};offers={123,pointers.data(),2,pointers.size()};
+    auto before_safe=released.size();
+    auto unchanged=ReplaceOwnedOffersSafely(offers,10,false,[&](auto,auto){},release_batch,[](auto&,auto){return true;});
+    Check(!unchanged.committed && offers.count==2 && offers.data==pointers.data() && released.size()==before_safe);
+    auto allocation_failure=ReplaceOwnedOffersSafely(offers,10,false,[&](auto,auto){
+        for(auto& job:second)offers.data[offers.count++]=job.Address();
+    },release_batch,[](auto&,auto){return false;});
+    Check(!allocation_failure.committed && offers.count==2 && offers.data[0]==a.Address());
+    Check(released.size()==before_safe+5);
+    before_safe=released.size();
+    auto changed=ReplaceOwnedOffersSafely(offers,10,false,[&](auto,auto){
+        for(auto& job:second)offers.data[offers.count++]=job.Address();
+    },release_batch,[](auto&,auto){return true;});
+    Check(changed.committed && offers.count==5 && offers.data==pointers.data() && offers.data[0]==second[0].Address());
+    Check(released.size()==before_safe+2);
     std::puts("Budget stub execution/unwinding, manual scope, slot variety and native-key duplicate filtering passed.");
     std::puts("Owned cargo follows 1 -> 5 -> 5 -> 1, with one automatic attempt after expiry.");
 }

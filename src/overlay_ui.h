@@ -12,6 +12,7 @@ void Request(int action);
 int Tick(bool ready=true);
 void CancelPending();
 void FinishAction(bool show_catalog=false);
+void SetProgress(std::uint64_t done,std::uint64_t total);
 void Shutdown();
 struct Diagnostics { std::uint64_t frames; std::uint64_t present_calls; std::uint64_t input_calls; bool logo; bool ready; int operation; bool menu; };
 Diagnostics Inspect();

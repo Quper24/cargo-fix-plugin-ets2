@@ -7,6 +7,15 @@ namespace custom_jobs::creation {
 using OwnedCallback=void(*)(std::uintptr_t,std::uintptr_t);
 struct Backend { OwnedCallback prepare=nullptr, generate=nullptr; };
 using Logger=void(*)(const char*);
+class ManualMarketScope {
+public:
+    ManualMarketScope();
+    ~ManualMarketScope();
+    ManualMarketScope(const ManualMarketScope&)=delete;
+    ManualMarketScope& operator=(const ManualMarketScope&)=delete;
+private:
+    bool previous=false;
+};
 bool Initialize(std::uintptr_t module,const GameProfile& core,const CreationCode& code,Backend owned,Logger logger);
 void Shutdown();
 std::uintptr_t TrailerIdentity(std::uintptr_t economy);

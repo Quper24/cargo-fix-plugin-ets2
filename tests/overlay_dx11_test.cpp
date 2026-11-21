@@ -70,8 +70,8 @@ int wmain(int argc,wchar_t** argv) {
         overlay_ui::RenderFrame(chain.Get(),true,menu,page);
     };
     Check(overlay_ui::Initialize(std::filesystem::temp_directory_path(),Log,false));
-    overlay_ui::Request(2);Check(overlay_ui::Tick()==0); // Feedback must be rendered before work starts.
-    render();
+    overlay_ui::Request(2);overlay_ui::SetProgress(123,1000);Check(overlay_ui::Tick()==0); // Feedback must be rendered before work starts.
+    for(int i=0;i<3;++i)render();Sleep(160);
     Check(overlay_ui::Inspect().operation==2);
     overlay_ui::Request(1);Check(overlay_ui::Tick()==2 && overlay_ui::Tick()==0); // Duplicate action is ignored.
     overlay_ui::FinishAction();Check(overlay_ui::Inspect().operation==0);
@@ -100,7 +100,7 @@ int wmain(int argc,wchar_t** argv) {
     for(int i=0;i<3;++i)render(true,1);
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>3?argv[3]:nullptr,false,false,true);
     overlay_ui::Request(3);Check(overlay_ui::Tick()==0);
-    render();
+    for(int i=0;i<3;++i)render();Sleep(160);
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>4?argv[4]:nullptr,false,true);
     Check(overlay_ui::Tick()==3 && overlay_ui::Tick()==0);
     overlay_ui::FinishAction(true);
