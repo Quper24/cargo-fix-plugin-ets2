@@ -8,7 +8,7 @@
 #include "menu_pointer.h"
 #include "brand_palette.h"
 #include "plugin_version.h"
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "custom_jobs_ui.h"
 #endif
 #include <Windows.h>
@@ -89,7 +89,7 @@ void CloseMenu() {
     if(context) { ContextScope scope;ImGui::GetIO().ClearInputMouse(); }
 }
 void OpenMenu() {
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::RefreshTrailerCargos();
 #endif
     menu=true; capture=0; error.clear(); draft_cargo=cargo; draft_freight=freight;
@@ -219,7 +219,7 @@ void DrawMenu(int preview_page = -1) {
     text(32,108,17,muted,Tr("Your cargo market. Your rules.","Ваш рынок грузов. Ваши правила."));
     if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),pos(710,23),pos(842,120));
     if(button("X##top",850,18,30,30))CloseMenu();
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     int& page=menu_page;
     const int visible_page = preview_page >= 0 ? preview_page : page;
     if(button(Tr("Markets", "Рынки"),32,136,164,40,visible_page==0))page=0;
@@ -242,7 +242,7 @@ void DrawMenu(int preview_page = -1) {
         ImGui::End();ImGui::PopStyleVar();return;
     }
 #endif
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     const float cards_y=194,cards_height=190,keyboard_y=410,hint_y=536,detail_y=561;
 #else
     const float cards_y=156,cards_height=204,keyboard_y=385,hint_y=518,detail_y=545;
@@ -477,7 +477,7 @@ void Notify(const std::wstring& text) { std::lock_guard<std::recursive_mutex> gu
 void Request(int action) {
     std::lock_guard<std::recursive_mutex> guard(mutex);
     bool allowed=action==1 || action==2;
-#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
     allowed=allowed || action==3 || action==4;
 #endif
     if(allowed && operation.Request(action,GetTickCount64())){

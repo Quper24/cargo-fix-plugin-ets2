@@ -33,7 +33,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if(ImGui::Button(tr("Read loaded session","Считать загруженную сессию"),{300*scale,40*scale}))scan();
     ImGui::PopStyleColor(4);ImGui::PopStyleVar(2);
     ImGui::SameLine(0,16*scale);
-    ImGui::TextDisabled("%s", tr("Experimental", "Экспериментальная функция"));
+    ImGui::TextDisabled("%s", tr("Data from your game", "Данные из вашей игры"));
     ImGui::Dummy({0,4*scale});
     if (!state->supported) {
         ImGui::TextWrapped("%s", tr("Session catalog is unavailable for this game build.",
