@@ -4,6 +4,7 @@
 #include <gdiplus.h>
 #include <algorithm>
 #include <cstring>
+#include <cstddef>
 
 namespace branding {
 namespace {
@@ -53,6 +54,31 @@ bool Initialize() {
     if (!logo || logo->GetLastStatus() != Gdiplus::Ok || !logo->GetWidth() || !logo->GetHeight()) {
         Shutdown(); return false;
     }
+    // Normalize the source logo's pastel green to the UI accent at load time.
+    // Keep the source asset, white trucks, alpha and brush shading intact.
+    auto* tinted=new Gdiplus::Bitmap(logo->GetWidth(),logo->GetHeight(),PixelFormat32bppARGB);
+    if(tinted->GetLastStatus()!=Gdiplus::Ok){delete tinted;Shutdown();return false;}
+    {
+        Gdiplus::Graphics graphics(tinted);
+        graphics.SetCompositingMode(Gdiplus::CompositingModeSourceCopy);
+        graphics.DrawImage(logo,0,0,static_cast<INT>(logo->GetWidth()),static_cast<INT>(logo->GetHeight()));
+    }
+    Gdiplus::Rect area(0,0,tinted->GetWidth(),tinted->GetHeight());
+    Gdiplus::BitmapData pixels{};
+    if(tinted->LockBits(&area,Gdiplus::ImageLockModeRead|Gdiplus::ImageLockModeWrite,PixelFormat32bppARGB,&pixels)!=Gdiplus::Ok){delete tinted;Shutdown();return false;}
+    for(UINT y=0;y<pixels.Height;++y){
+        auto* row=static_cast<unsigned char*>(pixels.Scan0)+std::ptrdiff_t(y)*pixels.Stride;
+        for(UINT x=0;x<pixels.Width;++x){
+            auto* p=row+x*4;
+            if(p[1]>p[2]+8 && p[1]>p[0]+8){
+                const float shade=std::min(1.f,p[1]/214.f);
+                p[2]=static_cast<unsigned char>(brand_palette::Red*shade+.5f);
+                p[1]=static_cast<unsigned char>(brand_palette::Green*shade+.5f);
+                p[0]=static_cast<unsigned char>(brand_palette::Blue*shade+.5f);
+            }
+        }
+    }
+    tinted->UnlockBits(&pixels);delete logo;logo=tinted;
     return true;
 }
 

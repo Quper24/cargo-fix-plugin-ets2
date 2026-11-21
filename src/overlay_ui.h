@@ -9,9 +9,10 @@ bool Initialize(const std::filesystem::path& directory, Logger logger, bool inst
 void RenderFrame(IDXGISwapChain* chain, bool allow_hidden = false, bool preview_menu = false, int preview_page = -1);
 void Notify(const std::wstring& text);
 void Request(int action);
-int Tick();
+int Tick(bool ready=true);
 void CancelPending();
+void FinishAction(bool show_catalog=false);
 void Shutdown();
-struct Diagnostics { std::uint64_t frames; std::uint64_t present_calls; std::uint64_t input_calls; bool logo; bool ready; };
+struct Diagnostics { std::uint64_t frames; std::uint64_t present_calls; std::uint64_t input_calls; bool logo; bool ready; int operation; bool menu; };
 Diagnostics Inspect();
 }

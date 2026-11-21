@@ -325,6 +325,7 @@ bool InitializeProfile()
 
 void ResetSession()
 {
+    overlay_ui::CancelPending();
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     custom_jobs::Reset();
 #endif
@@ -474,7 +475,8 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     custom_jobs::Observe(economy, ready);
 #endif
     // Consume every request even in menus: never defer it until a future drive/save.
-    const int action = overlay_ui::Tick();
+    const int action = overlay_ui::Tick(ready);
+    struct FinishAction {int action;bool reopen=false;~FinishAction(){if(action)overlay_ui::FinishAction(reopen);}} finish{action};
     if (action && !ready) {
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
         custom_jobs::CancelCreation();
@@ -486,7 +488,7 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     } else if (action == 1) RefreshOwnedCargo(economy);
     else if (action == 2 && g_enabled) freight::Request(economy);
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
-    else if (action == 3 && g_enabled) custom_jobs::Scan(economy);
+    else if(action==3 && g_enabled){custom_jobs::Scan(economy);finish.reopen=true;}
     else if (action == 4 && g_enabled) {
         const auto result=custom_jobs::ExecuteCreation(economy);
         const auto text=custom_jobs::CreationMessage(result,notifications::Russian());

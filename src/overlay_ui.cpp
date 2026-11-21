@@ -4,6 +4,7 @@
 #include "branding.h"
 #include "hotkey_binding.h"
 #include "notification_lifetime.h"
+#include "operation_feedback.h"
 #include "menu_pointer.h"
 #include "brand_palette.h"
 #include "plugin_version.h"
@@ -30,7 +31,9 @@ namespace overlay_ui {
 namespace {
 std::recursive_mutex mutex;
 std::atomic<bool> stopping{true};
-std::atomic<int> requested{0};
+OperationFeedback operation;
+bool busy_drawn=false,reopen_catalog=false;
+int menu_page=0;
 std::atomic<unsigned> callbacks{0};
 Logger logger = nullptr;
 std::filesystem::path ini;
@@ -170,6 +173,11 @@ std::string BindingName(WORD binding) {
 }
 void Poll(bool focused) {
     const bool m=Held(hotkeys::Menu),a=Held(cargo),b=Held(freight);
+    if(operation.Active()){
+        menu_was_down=m;cargo_down=a;freight_down=b;
+        for(unsigned k=0;k<256;++k)keys[k]=Down(k);
+        return;
+    }
     if(focused) {
         if(m&&!menu_was_down) { if(menu)CloseMenu();else OpenMenu(); }
         else if(menu && Down(VK_ESCAPE) && !keys[VK_ESCAPE]) { if(capture)capture=0;else CloseMenu(); }
@@ -199,24 +207,25 @@ void DrawMenu(int preview_page = -1) {
     auto text=[&](float x,float y,float size,ImU32 color,const char* value){draw->AddText(font,size*scale,pos(x,y),color,value,nullptr,0);};
     auto card=[&](float x,float y,float w,float h){draw->AddRectFilled(pos(x,y),pos(x+w,y+h),IM_COL32(14,14,14,255),14*scale);draw->AddRect(pos(x,y),pos(x+w,y+h),IM_COL32(65,65,65,255),14*scale);};
     auto button=[&](const char* label,float x,float y,float w,float h,bool primary=false){
-        ImGui::SetCursorScreenPos(pos(x,y));ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{8*scale,8*scale});
-        ImGui::SetWindowFontScale(scale*.5f);
+        ImGui::SetCursorScreenPos(pos(x,y));ImGui::SetWindowFontScale(scale*.5f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{12*scale,std::max(0.f,(h*scale-ImGui::GetTextLineHeight())*.5f)});
+        ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign,{.5f,.5f});
         if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(std::min(1.f,accent.x*1.08f),std::min(1.f,accent.y*1.08f),std::min(1.f,accent.z*1.08f),1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(accent.x*.85f,accent.y*.85f,accent.z*.85f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1)); }
-        bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar();return hit;
+        bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar(2);return hit;
     };
     text(32,25,14,green,"QUPER SIMULATOR");text(30,54,34,white,"Cargo Control");
     text(32,108,17,muted,Tr("Your cargo market. Your rules.","Ваш рынок грузов. Ваши правила."));
     if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),pos(710,23),pos(842,120));
     if(button("X##top",850,18,30,30))CloseMenu();
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
-    static int page = 0;
+    int& page=menu_page;
     const int visible_page = preview_page >= 0 ? preview_page : page;
-    if(button(Tr("Markets", "Рынки"),32,128,150,26,visible_page==0))page=0;
-    if(button(Tr("Create job", "Создать заказ"),194,128,190,26,visible_page==1))page=1;
+    if(button(Tr("Markets", "Рынки"),32,136,164,40,visible_page==0))page=0;
+    if(button(Tr("Create job", "Создать заказ"),212,136,208,40,visible_page==1))page=1;
     if((preview_page >= 0 ? preview_page : page)==1) {
         ImGui::SetWindowFontScale(1.f); // Child font scaling must not multiply the header button scale.
-        ImGui::SetCursorScreenPos(pos(32,170));
-        ImGui::BeginChild("session-catalog",{836*scale,414*scale});
+        ImGui::SetCursorScreenPos(pos(32,194));
+        ImGui::BeginChild("session-catalog",{836*scale,390*scale});
         ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.08f,.08f,.08f,1));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,ImVec4(.15f,.15f,.15f,1));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive,ImVec4(.2f,.2f,.2f,1));
@@ -226,28 +235,33 @@ void DrawMenu(int preview_page = -1) {
         custom_jobs::DrawCatalog(scale,notifications::Russian(),[]{Request(3);CloseMenu();},[]{Request(4);CloseMenu();});
         ImGui::PopStyleColor(6);
         ImGui::EndChild();
-        text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT " dev");
+        text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
         if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
         ImGui::End();ImGui::PopStyleVar();return;
     }
 #endif
-    card(28,156,410,204);card(462,156,410,204);
-    text(48,176,23,white,Tr("Owned-trailer cargo","Грузы для прицепа"));
-    text(48,220,16,muted,Tr("Replace current owned-trailer offers.\nUp to 5 new offers per company.","Заменить текущие грузы для прицепа.\nДо 5 новых предложений на компанию."));
-    text(482,176,23,white,Tr("Freight & Quick jobs","Рынок и агентства"));
-    text(482,220,16,muted,Tr("Refresh offers across all companies.\nExisting orders will be replaced.","Обновить предложения во всех компаниях.\nСуществующие заказы будут заменены."));
-    if(button(Tr("Refresh cargo","Обновить грузы"),48,298,370,42,true)) { Request(1);CloseMenu(); }
-    if(button(Tr("Refresh orders","Обновить заказы"),482,298,370,42,true)) { Request(2);CloseMenu(); }
-    text(32,385,21,white,Tr("Keyboard shortcuts","Горячие клавиши"));
-    text(48,428,15,muted,Tr("Refresh cargo","Обновление грузов"));text(482,428,15,muted,Tr("Refresh orders","Обновление заказов"));
-    const auto a=(capture==1?std::string(Tr("Press a shortcut…","Нажмите сочетание…")):BindingName(draft_cargo))+"##cargo";
-    const auto b=(capture==2?std::string(Tr("Press a shortcut…","Нажмите сочетание…")):BindingName(draft_freight))+"##freight";
-    if(button(a.c_str(),48,458,292,38))capture=1;
-    if(button(b.c_str(),482,458,292,38))capture=2;
-    if(button(Tr("Clear##cargo","Сброс##cargo"),350,458,68,38)){draft_cargo=0;capture=0;}
-    if(button(Tr("Clear##freight","Сброс##freight"),784,458,68,38)){draft_freight=0;capture=0;}
-    text(32,518,15,muted,Tr("Select a field and press a shortcut. Clear disables the binding.","Выберите поле и нажмите сочетание. «Сброс» отключает назначение."));
-    text(32,545,15,muted,Tr("Available in the garage and while driving. Menu: Ctrl + Alt + F9.","Доступно в гараже и в пути. Меню: Ctrl + Alt + F9."));
+#ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
+    const float cards_y=194,cards_height=190,keyboard_y=410,hint_y=536,detail_y=561;
+#else
+    const float cards_y=156,cards_height=204,keyboard_y=385,hint_y=518,detail_y=545;
+#endif
+    card(28,cards_y,410,cards_height);card(462,cards_y,410,cards_height);
+    text(48,cards_y+20,23,white,Tr("Owned-trailer cargo","Грузы для прицепа"));
+    text(48,cards_y+64,16,muted,Tr("Replace current owned-trailer offers.\nUp to 5 new offers per company.","Заменить текущие грузы для прицепа.\nДо 5 новых предложений на компанию."));
+    text(482,cards_y+20,23,white,Tr("Freight & Quick jobs","Рынок и агентства"));
+    text(482,cards_y+64,16,muted,Tr("Refresh offers across all companies.\nExisting orders will be replaced.","Обновить предложения во всех компаниях.\nСуществующие заказы будут заменены."));
+    if(button(Tr("Refresh cargo","Обновить грузы"),48,cards_y+cards_height-62,370,42,true)) { Request(1);CloseMenu(); }
+    if(button(Tr("Refresh orders","Обновить заказы"),482,cards_y+cards_height-62,370,42,true)) { Request(2);CloseMenu(); }
+    text(32,keyboard_y,21,white,Tr("Keyboard shortcuts","Горячие клавиши"));
+    text(48,keyboard_y+43,15,muted,Tr("Refresh cargo","Обновление грузов"));text(482,keyboard_y+43,15,muted,Tr("Refresh orders","Обновление заказов"));
+    const auto a=(capture==1?std::string(Tr("Press a shortcut...","Нажмите сочетание...")):BindingName(draft_cargo))+"##cargo";
+    const auto b=(capture==2?std::string(Tr("Press a shortcut...","Нажмите сочетание...")):BindingName(draft_freight))+"##freight";
+    if(button(a.c_str(),48,keyboard_y+73,292,38))capture=1;
+    if(button(b.c_str(),482,keyboard_y+73,292,38))capture=2;
+    if(button(Tr("Clear##cargo","Сброс##cargo"),350,keyboard_y+73,68,38)){draft_cargo=0;capture=0;}
+    if(button(Tr("Clear##freight","Сброс##freight"),784,keyboard_y+73,68,38)){draft_freight=0;capture=0;}
+    text(32,hint_y,15,muted,Tr("Select a field and press a shortcut. Clear disables the binding.","Выберите поле и нажмите сочетание. «Сброс» отключает назначение."));
+    text(32,detail_y,15,muted,Tr("Available in the garage and while driving. Menu: Ctrl + Alt + F9.","Доступно в гараже и в пути. Меню: Ctrl + Alt + F9."));
     text(32,599,14,error.empty()?muted:white,error.empty()?Tr("Save to apply your shortcuts.","Изменения применяются после сохранения."):error.c_str());
     text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
     if(button(Tr("Save","Сохранить"),576,588,142,44,true)) {
@@ -259,6 +273,29 @@ void DrawMenu(int preview_page = -1) {
     }
     if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
     ImGui::End();ImGui::PopStyleVar();
+}
+void DrawBusy(){
+    const int action=operation.Active();if(!action)return;
+    auto& io=ImGui::GetIO();const float scale=std::min(1.f,(io.DisplaySize.x-32)/520.f);
+    const ImVec2 size{520*scale,176*scale};
+    ImGui::GetBackgroundDrawList()->AddRectFilled({0,0},io.DisplaySize,IM_COL32(0,0,0,145));
+    ImGui::SetNextWindowPos({io.DisplaySize.x*.5f,io.DisplaySize.y*.5f},ImGuiCond_Always,{.5f,.5f});
+    ImGui::SetNextWindowSize(size);
+    ImGui::Begin("##cargo-operation",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoScrollbar);
+    const auto p=ImGui::GetWindowPos();auto* draw=ImGui::GetWindowDrawList();
+    const ImVec2 center{p.x+40*scale,p.y+47*scale};
+    draw->AddCircle(center,13*scale,IM_COL32(45,45,45,255),32,3*scale);
+    const float phase=static_cast<float>(ImGui::GetTime())*4.f;
+    draw->PathArcTo(center,13*scale,phase,phase+4.7f,28);draw->PathStroke(green,0,3*scale);
+    const char* title=action==1?Tr("Refreshing trailer cargo...","Обновление грузов для прицепа..."):
+        action==2?Tr("Refreshing job market...","Обновление рынка заказов..."):
+        action==3?Tr("Reading loaded session...","Чтение загруженной сессии..."):
+                  Tr("Creating job...","Создание заказа...");
+    draw->AddText(font,20*scale,{p.x+72*scale,p.y+34*scale},white,title);
+    const char* body=action==3?Tr("Reading cities, companies and cargo. The order window will reopen automatically. Please wait.","Считываю города, базы и грузы. Окно заказа откроется автоматически после завершения. Пожалуйста, подождите."):
+        Tr("Preparing offers. Please wait for the result.","Подготавливаю предложения. Пожалуйста, дождитесь результата.");
+    draw->AddText(font,17*scale,{p.x+28*scale,p.y+91*scale},muted,body,nullptr,(size.x-56*scale));
+    ImGui::End();
 }
 void DrawNotice() {
     auto& io=ImGui::GetIO();const float w=std::min(800.f,io.DisplaySize.x-24);
@@ -338,6 +375,10 @@ HRESULT STDMETHODCALLTYPE PresentBridge(IDXGISwapChain* chain,UINT sync,UINT fla
     ++callbacks; ++present_calls;
     if(!stopping && !(flags&DXGI_PRESENT_TEST)) RenderFrame(chain);
     const HRESULT result=previous_present(chain,sync,flags);
+    if(SUCCEEDED(result) && !(flags&DXGI_PRESENT_TEST)){
+        std::lock_guard<std::recursive_mutex> guard(mutex);
+        if(busy_drawn)operation.Presented();busy_drawn=false;
+    }
     if(result==DXGI_ERROR_DEVICE_REMOVED || result==DXGI_ERROR_DEVICE_RESET) {
         std::lock_guard<std::recursive_mutex> guard(mutex);ReleaseRenderer();
     }
@@ -355,6 +396,7 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
     if(!context && !StartRenderer(chain,desc))return;
     ContextScope scope;
     const bool focused=GetForegroundWindow()==game || allow_hidden;
+    if(reopen_catalog && focused){reopen_catalog=false;menu_page=1;OpenMenu();}
     if(!allow_hidden) Poll(focused);
     ImGui_ImplDX11_NewFrame();auto& io=ImGui::GetIO();
     if(menu&&focused) {
@@ -365,9 +407,11 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
     last_frame_time=now_tick;io.MouseDrawCursor=menu&&focused;
     if(allow_hidden) { io.ClearInputKeys();io.ClearInputMouse();io.MousePos={-FLT_MAX,-FLT_MAX}; }
     ImGui::NewFrame();
-    const bool visible_notice=focused&&!menu&&!preview_menu&&!notice.empty();
+    const bool visible_notice=focused&&!operation.Active()&&!menu&&!preview_menu&&!notice.empty();
     const bool alive=lifetime.Tick(GetTickCount64(),visible_notice);
-    if((menu || preview_menu)&&focused)DrawMenu(allow_hidden&&preview_menu?preview_page:-1);else if(alive&&visible_notice)DrawNotice();
+    if(!operation.Active()&&(menu || preview_menu)&&focused)DrawMenu(allow_hidden&&preview_menu?preview_page:-1);else if(alive&&visible_notice)DrawNotice();
+    const bool loading=focused && operation.Active();
+    if(loading)DrawBusy();
     ImGui::Render();
     if(ImGui::GetDrawData()->TotalVtxCount==0)return;
     ComPtr<ID3D11Texture2D> backbuffer;ComPtr<ID3D11RenderTargetView> target;
@@ -384,6 +428,8 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     gpu->OMSetRenderTargets(8,previous,depth.Get());for(auto* view:previous)if(view)view->Release();
     ++rendered;
+    busy_drawn=loading;
+    if(allow_hidden && loading)operation.Presented(); // Offscreen tests simulate the successful present.
 }
 bool Initialize(const std::filesystem::path& directory,Logger log,bool install_hook) {
     std::lock_guard<std::recursive_mutex> guard(mutex);logger=log;ini=directory/L"CargoControl.ini";
@@ -391,7 +437,7 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
     cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,read_ini.c_str()));
     freight=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Freight",0,read_ini.c_str()));
     if(cargo==hotkeys::Menu)cargo=0;if(!hotkeys::PairAllowed(cargo,freight))freight=0;
-    stopping=false;requested=0;menu=false;capture=0;rendered=0;present_calls=0;input_calls=0;
+    stopping=false;operation.Complete();busy_drawn=reopen_catalog=false;menu_page=0;menu=false;capture=0;rendered=0;present_calls=0;input_calls=0;
     if(!install_hook)return true;
     WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"QSCargoDxProbe";
     RegisterClassW(&cls);HWND probe=CreateWindowExW(0,cls.lpszClassName,L"",WS_POPUP,0,0,8,8,nullptr,nullptr,cls.hInstance,nullptr);
@@ -420,14 +466,17 @@ bool Initialize(const std::filesystem::path& directory,Logger log,bool install_h
 }
 void Notify(const std::wstring& text) { std::lock_guard<std::recursive_mutex> guard(mutex);notice=Utf8(text);lifetime.Start(); }
 void Request(int action) {
-    if(action==1 || action==2) requested=action;
+    std::lock_guard<std::recursive_mutex> guard(mutex);
+    bool allowed=action==1 || action==2;
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
-    else if(action==3 || action==4) requested=action;
+    allowed=allowed || action==3 || action==4;
 #endif
+    if(allowed && operation.Request(action)){notice.clear();busy_drawn=false;}
 }
-int Tick() { return requested.exchange(0); }
-void CancelPending() { requested=0; }
-Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr}; }
+int Tick(bool ready) {std::lock_guard<std::recursive_mutex> guard(mutex);return operation.Take(!ready);}
+void FinishAction(bool show_catalog){std::lock_guard<std::recursive_mutex> guard(mutex);operation.Complete();busy_drawn=false;reopen_catalog=show_catalog;}
+void CancelPending(){FinishAction(false);}
+Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr,operation.Active(),menu}; }
 void Shutdown() {
     stopping=true;
     DisableMouseHooks();
@@ -436,7 +485,7 @@ void Shutdown() {
     while(callbacks.load())Sleep(1);
     std::lock_guard<std::recursive_mutex> guard(mutex);ReleaseRenderer();
     RemoveMouseHooks();if(hook_owned)MH_RemoveHook(present_site);if(minhook_owned)MH_Uninitialize();hook_owned=minhook_owned=false;
-    requested=0;notice.clear();keys.fill(false);menu_was_down=cargo_down=freight_down=false;
+    operation.Complete();busy_drawn=reopen_catalog=false;notice.clear();keys.fill(false);menu_was_down=cargo_down=freight_down=false;
     previous_present=nullptr;present_site=nullptr;logger=nullptr;
 }
 }

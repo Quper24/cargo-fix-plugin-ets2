@@ -18,7 +18,7 @@ using Microsoft::WRL::ComPtr;
 namespace notifications { bool Russian() { return true; } }
 #define Check(ok) do { if(!(ok)) { std::fprintf(stderr,"DX11 check failed: line %d, error %lu\n",__LINE__,GetLastError());std::exit(1); } }while(0)
 void Log(const char* s) { std::puts(s); }
-void Capture(ID3D11Device* dev,ID3D11DeviceContext* gpu,IDXGISwapChain* chain,const wchar_t* path,bool menu_pixels=false) {
+void Capture(ID3D11Device* dev,ID3D11DeviceContext* gpu,IDXGISwapChain* chain,const wchar_t* path,bool menu_pixels=false,bool progress=false,bool catalog=false) {
     ComPtr<ID3D11Texture2D> back,copy;Check(SUCCEEDED(chain->GetBuffer(0,IID_PPV_ARGS(&back))));
     D3D11_TEXTURE2D_DESC desc{};back->GetDesc(&desc);desc.Usage=D3D11_USAGE_STAGING;desc.BindFlags=0;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;desc.MiscFlags=0;
     Check(SUCCEEDED(dev->CreateTexture2D(&desc,nullptr,&copy)));gpu->CopyResource(copy.Get(),back.Get());
@@ -27,10 +27,22 @@ void Capture(ID3D11Device* dev,ID3D11DeviceContext* gpu,IDXGISwapChain* chain,co
     for(UINT y=0;y<desc.Height;++y)for(UINT x=0;x<desc.Width;++x) {
         const auto* p=pixel+y*map.RowPitch+x*4;if(p[1]>160 && p[1]>p[0]+10 && p[1]>p[2]+10)++green;
     }
-    Check(green>500);
+    Check(green>(progress?50:500));
     if(menu_pixels) {
-        const auto* p=pixel+375*map.RowPitch+140*4;
+        const auto* p=pixel+380*map.RowPitch+140*4;
         Check(p[2]==brand_palette::Red && p[1]==brand_palette::Green && p[0]==brand_palette::Blue);
+    }
+    if(menu_pixels || catalog){
+        unsigned accent_logo=0,white_logo=0,white_title=0;
+        for(unsigned y=105;y<150;++y)for(unsigned x=90;x<300;++x){
+            const auto* q=pixel+y*map.RowPitch+x*4;if(q[0]>235 && q[1]>235 && q[2]>235)++white_title;
+        }
+        for(unsigned y=77;y<174;++y)for(unsigned x=772;x<904;++x){
+            const auto* q=pixel+y*map.RowPitch+x*4;
+            if(std::abs(int(q[2])-int(brand_palette::Red))<=3 && std::abs(int(q[1])-int(brand_palette::Green))<=3 && std::abs(int(q[0])-int(brand_palette::Blue))<=3)++accent_logo;
+            if(q[0]>235 && q[1]>235 && q[2]>235)++white_logo;
+        }
+        Check(accent_logo>10 && white_logo>100 && white_title>200);
     } // Real branded pixels must reach the DX11 backbuffer.
     if(path) {
         Gdiplus::Bitmap image(desc.Width,desc.Height,map.RowPitch,PixelFormat32bppRGB,const_cast<BYTE*>(pixel));
@@ -49,11 +61,23 @@ int wmain(int argc,wchar_t** argv) {
     desc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;desc.OutputWindow=window;desc.SampleDesc.Count=1;desc.Windowed=TRUE;
     ComPtr<IDXGISwapChain> chain;ComPtr<ID3D11Device> dev;ComPtr<ID3D11DeviceContext> gpu;
     Check(SUCCEEDED(D3D11CreateDeviceAndSwapChain(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&desc,&chain,&dev,nullptr,&gpu)));
+    auto render=[&](bool menu=false,int page=-1){
+        ComPtr<ID3D11Texture2D> back;ComPtr<ID3D11RenderTargetView> view;
+        Check(SUCCEEDED(chain->GetBuffer(0,IID_PPV_ARGS(&back))));
+        D3D11_RENDER_TARGET_VIEW_DESC target{};target.ViewDimension=D3D11_RTV_DIMENSION_TEXTURE2D;target.Format=DXGI_FORMAT_B8G8R8A8_UNORM;
+        Check(SUCCEEDED(dev->CreateRenderTargetView(back.Get(),&target,&view)));
+        const float clear[]={.025f,.025f,.025f,1};gpu->ClearRenderTargetView(view.Get(),clear);
+        overlay_ui::RenderFrame(chain.Get(),true,menu,page);
+    };
     Check(overlay_ui::Initialize(std::filesystem::temp_directory_path(),Log,false));
-    overlay_ui::Request(2);Check(overlay_ui::Tick()==2);Check(overlay_ui::Tick()==0); // No driving/started event is necessary.
+    overlay_ui::Request(2);Check(overlay_ui::Tick()==0); // Feedback must be rendered before work starts.
+    render();
+    Check(overlay_ui::Inspect().operation==2);
+    overlay_ui::Request(1);Check(overlay_ui::Tick()==2 && overlay_ui::Tick()==0); // Duplicate action is ignored.
+    overlay_ui::FinishAction();Check(overlay_ui::Inspect().operation==0);
     overlay_ui::Request(1);overlay_ui::CancelPending();Check(overlay_ui::Tick()==0);
     D3D11_VIEWPORT viewport{11,12,333,222,.2f,.8f};gpu->RSSetViewports(1,&viewport);
-    for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,true);
+    for(int i=0;i<3;++i)render(true);
     const auto status=overlay_ui::Inspect();Check(status.ready && status.logo && status.frames>0);
     D3D11_VIEWPORT restored{};UINT n=1;gpu->RSGetViewports(&n,&restored);Check(n==1 && !std::memcmp(&restored,&viewport,sizeof(viewport)));
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>1?argv[1]:nullptr,true);
@@ -61,11 +85,11 @@ int wmain(int argc,wchar_t** argv) {
     Check(SUCCEEDED(chain->ResizeBuffers(0,1280,720,DXGI_FORMAT_UNKNOWN,0)));
     SetWindowPos(window,nullptr,0,0,1280,720,SWP_NOACTIVATE|SWP_NOZORDER);
     overlay_ui::Notify(L"Биржа грузов\nДобавлено заказов: 12 480. Доступно запусков: 2 из 3.");
-    for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,false);
+    for(int i=0;i<3;++i)render();
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>2?argv[2]:nullptr);
     Check(SUCCEEDED(chain->ResizeBuffers(0,1024,768,DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,0)));
     SetWindowPos(window,nullptr,0,0,1024,768,SWP_NOACTIVATE|SWP_NOZORDER);
-    for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,true);
+    for(int i=0;i<3;++i)render(true);
     Capture(dev.Get(),gpu.Get(),chain.Get(),nullptr,true); // Exact same palette on an sRGB backbuffer.
 #ifdef CARGO_CONTROL_EXPERIMENTAL_JOBS
     custom_jobs::Catalog fixture;
@@ -73,9 +97,15 @@ int wmain(int argc,wchar_t** argv) {
     fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","FedEx",{"cargo.mod_cargo9"},{},"Анн-Арбор"});
     fixture.companies.push_back({"company.volatile.other_base.other_city","other_city","Pepsi",{}, {"cargo.mod_cargo9"},"Кенора"});
     custom_jobs::PreviewCatalog(std::move(fixture));
-    for(int i=0;i<3;++i)overlay_ui::RenderFrame(chain.Get(),true,true,1);
-    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>3?argv[3]:nullptr);
-    overlay_ui::Request(3);Check(overlay_ui::Tick()==3 && overlay_ui::Tick()==0);
+    for(int i=0;i<3;++i)render(true,1);
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>3?argv[3]:nullptr,false,false,true);
+    overlay_ui::Request(3);Check(overlay_ui::Tick()==0);
+    render();
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>4?argv[4]:nullptr,false,true);
+    Check(overlay_ui::Tick()==3 && overlay_ui::Tick()==0);
+    overlay_ui::FinishAction(true);
+    render();
+    Check(overlay_ui::Inspect().operation==0 && overlay_ui::Inspect().menu);
     custom_jobs::Reset();Check(!custom_jobs::Snapshot()->scanned);
 #endif
     overlay_ui::Shutdown();Check(GetWindowLongPtrW(window,GWLP_WNDPROC)==original_proc);
