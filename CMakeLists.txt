@@ -17,7 +17,13 @@ target_include_directories(qs_imgui PUBLIC vendor/imgui)
 target_link_libraries(qs_imgui PUBLIC d3d11 dxgi d3dcompiler dwmapi)
 
 configure_file(src/branding.rc.in "${CMAKE_CURRENT_BINARY_DIR}/branding.rc" @ONLY)
-set(CARGO_CONTROL_VERSION_SUFFIX " dev")
+option(CARGO_CONTROL_DEVELOPMENT_BUILD "Add dev suffix to the version and DLL filename" OFF)
+set(CARGO_CONTROL_VERSION_SUFFIX "")
+set(CARGO_CONTROL_DLL_NAME "CargoControl")
+if(CARGO_CONTROL_DEVELOPMENT_BUILD)
+  set(CARGO_CONTROL_VERSION_SUFFIX " dev")
+  set(CARGO_CONTROL_DLL_NAME "CargoControl-dev")
+endif()
 configure_file(src/plugin_version.h.in "${CMAKE_CURRENT_BINARY_DIR}/plugin_version.h" @ONLY)
 set_property(SOURCE "${CMAKE_CURRENT_BINARY_DIR}/branding.rc" PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/quper-logo.png")
 add_library(cargo_control SHARED
@@ -34,10 +40,13 @@ add_library(cargo_control SHARED
 target_compile_features(cargo_control PRIVATE cxx_std_17)
 target_include_directories(cargo_control PRIVATE "${SCS_SDK_ROOT}/include" "${CMAKE_CURRENT_BINARY_DIR}")
 target_compile_definitions(cargo_control PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+if(CARGO_CONTROL_DEVELOPMENT_BUILD)
+  target_compile_definitions(cargo_control PRIVATE CARGO_CONTROL_DEVELOPMENT_BUILD)
+endif()
 target_link_libraries(cargo_control PRIVATE qs_imgui qs_minhook dinput8 dxguid comctl32 version user32 gdi32 shell32 ole32 gdiplus)
 target_compile_options(cargo_control PRIVATE /utf-8)
 set_target_properties(cargo_control PROPERTIES
-  OUTPUT_NAME "CargoControl"
+  OUTPUT_NAME "${CARGO_CONTROL_DLL_NAME}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
@@ -50,14 +59,13 @@ else()
   target_sources(cargo_control PRIVATE src/CargoControl.def)
 endif()
 
-option(CARGO_CONTROL_ROAD_TRIP "Build ATS Road Trip development module" ON)
+option(CARGO_CONTROL_ROAD_TRIP "Build ATS Road Trip orders" ON)
 if(CARGO_CONTROL_ROAD_TRIP)
   if(NOT CARGO_CONTROL_CUSTOM_JOBS)
     message(FATAL_ERROR "Road Trip requires CARGO_CONTROL_CUSTOM_JOBS=ON")
   endif()
   target_sources(cargo_control PRIVATE src/road_trip.cpp)
   target_compile_definitions(cargo_control PRIVATE CARGO_CONTROL_ROAD_TRIP)
-  set_target_properties(cargo_control PROPERTIES OUTPUT_NAME "CargoControl-dev")
 endif()
 
 option(CARGO_CONTROL_BUILD_CHECKS "Build offline generation-limit checks" OFF)

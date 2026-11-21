@@ -16,7 +16,7 @@ BEGIN
    VALUE "ProductName", "Cargo Control\0"
    VALUE "FileVersion", CARGO_CONTROL_RESOURCE_VERSION_TEXT
    VALUE "ProductVersion", CARGO_CONTROL_RESOURCE_VERSION_TEXT
-#ifdef CARGO_CONTROL_ROAD_TRIP
+#ifdef CARGO_CONTROL_DEVELOPMENT_BUILD
    VALUE "InternalName", "CargoControl-dev\0"
    VALUE "OriginalFilename", "CargoControl-dev.dll\0"
 #else
