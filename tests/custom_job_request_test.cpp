@@ -39,9 +39,17 @@ int main(){
     auto foreign=request;foreign.cargo="cargo.mod_tank";
     Check(ValidSelection(catalog,foreign)); // Owned cargo is independent of the source's outgoing list.
     foreign.market=Market::Freight;Check(!ValidSelection(catalog,foreign));
+    foreign.all_cargos=true;Check(ValidSelection(catalog,foreign));
+    foreign.destination="company.volatile.c.y";Check(ValidSelection(catalog,foreign)); // Receiver assortment is optional too.
+    foreign.all_cargos=false;Check(!ValidSelection(catalog,foreign));
+    foreign.all_cargos=true;foreign.cargo="cargo.not_loaded";Check(!ValidSelection(catalog,foreign));
+    foreign.cargo="cargo.mod_tank";foreign.destination=foreign.origin;Check(!ValidSelection(catalog,foreign));
     TrailerCargos trailer;
     Check(AvailableCargos(catalog,&catalog.companies[0],false,trailer).size()==1);
     Check(AvailableCargos(catalog,&catalog.companies[0],true,trailer).empty());
+    Check(AvailableCargos(catalog,&catalog.companies[0],false,trailer,true).size()==2);
+    Check(AvailableCargos(catalog,nullptr,false,trailer,true).size()==2);
+    Check(AvailableCargos(catalog,&catalog.companies[0],true,trailer,true).empty()); // No trailer still means no compatible cargo.
     trailer.status=TrailerCargoStatus::Ready;
     trailer.cargos={"cargo.salt","cargo.mod_tank"};
     const auto global=AvailableCargos(catalog,&catalog.companies[0],true,trailer);

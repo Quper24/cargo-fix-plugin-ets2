@@ -11,9 +11,10 @@ struct TrailerCargos {
         return status==TrailerCargoStatus::Ready && std::find(cargos.begin(),cargos.end(),cargo)!=cargos.end();
     }
 };
-inline std::vector<std::string> AvailableCargos(const Catalog& catalog,const Company* company,bool owned,const TrailerCargos& filter){
+inline std::vector<std::string> AvailableCargos(const Catalog& catalog,const Company* company,bool owned,const TrailerCargos& filter,bool all_cargos=false){
     std::vector<std::string> result;
     if(owned){for(const auto& cargo:catalog.cargos)if(filter.Allows(cargo.id))result.push_back(cargo.id);}
+    else if(all_cargos){for(const auto& cargo:catalog.cargos)result.push_back(cargo.id);}
     else if(company)result=company->outgoing;
     return result;
 }

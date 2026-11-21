@@ -14,14 +14,14 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     static std::string origin_city, origin_id, cargo_id, destination_city, destination_id;
     static std::array<char, 128> search{};
     static int market = 0;
-    static bool allow_replace=false;
     static bool delivery_time_x4=false;
+    static bool all_cargos=false;
     static std::string request_error;
     if (session != state->session) {
         session = state->session;
         origin_city.clear(); origin_id.clear(); cargo_id.clear(); destination_city.clear(); destination_id.clear();
         search.fill(0);
-        allow_replace=false;delivery_time_x4=false;request_error.clear();
+        delivery_time_x4=false;all_cargos=false;request_error.clear();
     }
     ImGui::SetWindowFontScale(scale * .5f);
     const ImVec4 scan_color(brand_palette::Red/255.f,brand_palette::Green/255.f,brand_palette::Blue/255.f,1);
@@ -67,6 +67,12 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     else if(catalog.label_fallbacks)ImGui::TextDisabled("%s",tr("Some missing names use identifiers.","Для части ненайденных названий показаны идентификаторы."));
     ImGui::RadioButton(tr("Freight market", "Грузоперевозки"), &market, 0); ImGui::SameLine();
     if(ImGui::RadioButton(tr("Owned trailer", "Собственный прицеп"), &market, 1))RefreshTrailerCargos();
+    if(market==0){ImGui::SameLine(0,16*scale);ImGui::Checkbox(tr("Show all cargo","Показывать все грузы"),&all_cargos);
+        if(ImGui::IsItemHovered()){
+            ImGui::BeginTooltip();ImGui::PushTextWrapPos(460*scale);
+            ImGui::TextUnformatted(tr("Any loaded cargo can depart from any freight company and be received by any freight company in the selected city, regardless of their usual assortments. The game supplies a suitable trailer.","Любой загруженный груз можно отправить с любой грузовой базы и принять на любой грузовой базе выбранного города независимо от ассортимента компаний. Подходящий прицеп подбирает игра."));
+            ImGui::PopTextWrapPos();ImGui::EndTooltip();
+        }}
     if(market==1){
         const auto status=state->trailer_cargos.status;
         if(status==TrailerCargoStatus::Ready)
@@ -90,9 +96,9 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         return nullptr;
     };
     const auto* origin = find_company(origin_id);
-    if (!origin && !origin_id.empty()) { origin_id.clear(); if(market==0)cargo_id.clear(); destination_id.clear(); }
+    if (!origin && !origin_id.empty()) { origin_id.clear(); if(market==0&&!all_cargos)cargo_id.clear(); destination_id.clear(); }
     auto receiver_allowed=[&](const Company& company){
-        return company.id!=origin_id && !cargo_id.empty() && (market==1 || Accepts(company,cargo_id));
+        return company.id!=origin_id && !cargo_id.empty() && (market==1 || all_cargos || Accepts(company,cargo_id));
     };
     auto city_select = [&](const char* label, std::string& selected, bool destination) {
         std::map<std::string,std::string> cities;
@@ -137,16 +143,16 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if(ImGui::BeginTable("origin-fields",2,ImGuiTableFlags_SizingStretchSame)){
         ImGui::TableNextColumn();
         if(city_select(tr("Origin city","Город отправления"),origin_city,false)){
-            origin_id.clear();if(market==0)cargo_id.clear();destination_city.clear();destination_id.clear();
+            origin_id.clear();if(market==0&&!all_cargos)cargo_id.clear();destination_city.clear();destination_id.clear();
         }
         ImGui::TableNextColumn();
         if(base_select(tr("Origin company","База отправления"),origin_city,origin_id,false)){
-            if(market==0)cargo_id.clear();destination_city.clear();destination_id.clear();
+            if(market==0&&!all_cargos)cargo_id.clear();destination_city.clear();destination_id.clear();
         }
         ImGui::EndTable();
     }
     origin = find_company(origin_id);
-    const auto available=AvailableCargos(catalog,origin,market==1,state->trailer_cargos);
+    const auto available=AvailableCargos(catalog,origin,market==1,state->trailer_cargos,all_cargos);
     if (!cargo_id.empty() && std::find(available.begin(), available.end(), cargo_id) == available.end()) {
         cargo_id.clear(); destination_city.clear();destination_id.clear();
     }
@@ -172,18 +178,19 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     }
     const auto* destination = find_company(destination_id);
     if(destination && !receiver_allowed(*destination)){destination_city.clear();destination_id.clear();}
-    if(market==0){ImGui::Checkbox(tr("Allow replacing one source-company offer","Разрешить замену одного предложения на базе отправления"),&allow_replace);ImGui::SameLine(0,16*scale);}
     ImGui::BeginDisabled(!state->delivery_time_supported);
     ImGui::Checkbox(tr("Delivery time x4 (trucks only)","Время на доставку ×4 (только грузовики)"),&delivery_time_x4);
     if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("%s",state->delivery_time_supported?
         tr("Applies to this created job, with a supplied or your own trailer. Offer availability remains 48 hours.","Применяется к создаваемому заказу с игровым или своим прицепом. Доступность заказа на рынке остаётся 48 часов."):
         tr("Extended delivery time is unavailable for this game code.","Увеличение срока доставки недоступно для этого кода игры."));
     ImGui::EndDisabled();
-    ImGui::TextWrapped("%s",tr("Select your companies and a compatible cargo. Accept the created offer from its market.",
-                              "Выберите базы и подходящий прицепу груз. Готовое предложение можно принять на соответствующем рынке."));
+    if(market==1)ImGui::TextWrapped("%s",tr("Accept the created offer from the cargo market for your trailer.","Готовое предложение примите на бирже грузов для своего прицепа."));
+    else if(all_cargos)ImGui::TextWrapped("%s",tr("Any cargo, any origin or destination company. One offer may be replaced automatically.","Любой груз, любая база отправления и приёма. Одно предложение может быть заменено автоматически."));
+    else ImGui::TextWrapped("%s",tr("Accept the created job from its market. One freight offer may be replaced automatically.","Готовый заказ примите на соответствующем рынке. Одно предложение грузоперевозок может быть заменено автоматически."));
     if(!state->creation_supported)ImGui::TextDisabled("%s",tr("Native job creation is unavailable for this game code.","Создание заказа недоступно для этого кода игры."));
-    JobRequest request{state->session,market==1?Market::OwnedTrailer:Market::Freight,origin_id,cargo_id,destination_id,allow_replace};
+    JobRequest request{state->session,market==1?Market::OwnedTrailer:Market::Freight,origin_id,cargo_id,destination_id,true};
     request.delivery_time_x4=state->delivery_time_supported&&delivery_time_x4;
+    request.all_cargos=market==0&&all_cargos;
     const bool can_create=state->creation_supported && ValidSelection(catalog,request);
     ImGui::BeginDisabled(!can_create);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{12*scale,9*scale});

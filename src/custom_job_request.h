@@ -8,8 +8,9 @@ struct JobRequest {
     std::uint64_t session=0;
     Market market=Market::Freight;
     std::string origin, cargo, destination;
-    bool allow_replace=false;
+    bool allow_replace=true;
     bool delivery_time_x4=false;
+    bool all_cargos=false;
 };
 enum class CreateStatus {
     Created, AlreadyPresent, Unsupported, NotReady, Cancelled, InvalidSelection,
@@ -44,10 +45,10 @@ inline bool ValidSelection(const Catalog& catalog,const JobRequest& request) {
        (request.market!=Market::Freight && request.market!=Market::OwnedTrailer))return false;
     const Company *from=nullptr,*to=nullptr;
     for(const auto& company:catalog.companies){if(company.id==request.origin)from=&company;if(company.id==request.destination)to=&company;}
-    const bool known_cargo=request.market==Market::OwnedTrailer?
+    const bool known_cargo=request.market==Market::OwnedTrailer || request.all_cargos?
         std::any_of(catalog.cargos.begin(),catalog.cargos.end(),[&](const auto& cargo){return cargo.id==request.cargo;}):
         from && std::find(from->outgoing.begin(),from->outgoing.end(),request.cargo)!=from->outgoing.end();
-    return from && to && known_cargo && (request.market==Market::OwnedTrailer || Accepts(*to,request.cargo));
+    return from && to && known_cargo && (request.market==Market::OwnedTrailer || request.all_cargos || Accepts(*to,request.cargo));
 }
 class RequestQueue {
 public:
