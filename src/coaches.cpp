@@ -6,6 +6,7 @@
 #include "overlay_ui.h"
 #include "notifications.h"
 #include "ui_controls.h"
+#include "search_combo.h"
 #include <Windows.h>
 #include <imgui.h>
 #include <atomic>
@@ -316,27 +317,20 @@ void Draw(float scale,bool russian){
         "Рейс можно принять на станции отправления на своём или предоставленном автобусе."));
     if(!state->scanned)ImGui::TextWrapped("%s",tr("Read the session to choose stations. The window will reopen automatically.","Считайте сессию для выбора остановок. Окно откроется автоматически."));
     if(!state->scanned)return;
-    static std::uint64_t seen=UINT64_MAX;static std::vector<std::string> route;static std::string selected;static char search[128]{};
-    if(seen!=state->session){seen=state->session;route.clear();selected.clear();search[0]=0;
+    static std::uint64_t seen=UINT64_MAX;static std::vector<std::string> route;static std::string selected;
+    if(seen!=state->session){seen=state->session;route.clear();selected.clear();
 #ifdef CARGO_CONTROL_CATALOG_PREVIEW
         route=state->preview_route;
 #endif
     }
     ImGui::Text(tr("Stations: %zu  |  Route: %zu / 24","Станций: %zu  |  Маршрут: %zu из 24"),state->stops.size(),route.size());
-    ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##coach-search",tr("Search city or station","Поиск города или станции"),search,sizeof(search));
-    const Stop* choice=nullptr;for(const auto& stop:state->stops)if(stop.id==selected)choice=&stop;
+    std::vector<controls::Choice> station_choices;
+    for(const auto& stop:state->stops)
+        if(std::find(route.begin(),route.end(),stop.id)==route.end())station_choices.push_back({stop.id,stop.name});
     ImGui::SetNextItemWidth(-180*scale);
-    if(ImGui::BeginCombo("##coach-station",choice?choice->name.c_str():tr("Choose station...","Выберите остановку..."))){
-        bool found=false;
-        for(const auto& stop:state->stops){
-            if(std::find(route.begin(),route.end(),stop.id)!=route.end()||!ContainsName(stop.name,search))continue;
-            found=true;
-            ImGui::PushID(stop.id.c_str());if(ImGui::Selectable(stop.name.c_str(),stop.id==selected)){selected=stop.id;search[0]=0;}
-            ImGui::PopID();
-        }controls::NoMatches(found,russian);ImGui::EndCombo();
-    }
+    controls::SearchCombo("coach-station",selected,station_choices,russian,ContainsName);
     ImGui::SameLine();ImGui::BeginDisabled(selected.empty()||route.size()>=MaxPoints);
-    if(ImGui::Button(tr("Add stop","Добавить"),{160*scale,28*scale})){route.push_back(selected);selected.clear();search[0]=0;}ImGui::EndDisabled();
+    if(ImGui::Button(tr("Add stop","Добавить"),{160*scale,28*scale})){route.push_back(selected);selected.clear();}ImGui::EndDisabled();
     controls::Hint(route.size()>=MaxPoints?tr("Maximum: 24 points. Remove a stop to add another.","Максимум 24 точки. Удалите остановку, чтобы добавить другую."):tr("The first point is departure; the last is the final stop.","Первая точка - отправление, последняя - конечная остановка."));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,{10*scale,8*scale});
     ImGui::BeginChild("coach-route",{0,120*scale},true,ImGuiWindowFlags_AlwaysUseWindowPadding);

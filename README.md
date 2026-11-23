@@ -1,4 +1,6 @@
-# Cargo Control 1.3.0
+# Cargo Control 1.3.1
+
+Версия 1.3.1 в главной ветке `main`: поиск прямо в полях выбора, настраиваемое сочетание открытия меню и обновлённое оформление горячих клавиш. Релиз 1.3.1 ещё не опубликован; последний опубликованный выпуск — 1.3.0.
 
 Плагин для **American Truck Simulator** и **Euro Truck Simulator 2**, Windows x64, DirectX 11. Меню: **Ctrl+Alt+F9**.
 
@@ -29,6 +31,6 @@ cmake --build build-release --config Release
 ctest --test-dir build-release -C Release --output-on-failure
 ```
 
-Обычная сборка создаёт `CargoControl.dll` версии 1.3.0. Параметр `-DCARGO_CONTROL_DEVELOPMENT_BUILD=ON` создаёт `CargoControl-dev.dll` с пометкой dev. В каталоге плагинов игры оставляйте одну DLL Cargo Control.
+Обычная сборка создаёт `CargoControl.dll` версии 1.3.1. Параметр `-DCARGO_CONTROL_DEVELOPMENT_BUILD=ON` создаёт `CargoControl-dev.dll` с пометкой dev. В каталоге плагинов игры оставляйте одну DLL Cargo Control.
 
 [Предыдущий выпуск 1.2.0](docs/README-public-1.2.0.md) · [Сторонние компоненты](THIRD_PARTY_NOTICES.txt)

@@ -334,7 +334,7 @@ bool InitializeProfile()
     custom_jobs::EnableCreation(*g_profile,g_creation_code,{PrepareSpecificOwned,GenerateSpecificOwned});
 #endif
     Log((std::string(g_profile->name) + " profile active. Cargo Control v" CARGO_CONTROL_VERSION_TEXT
-         ". Control menu Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());
+         ". Control menu shortcut is configurable; default Ctrl+Alt+F9. Action shortcuts disabled by default.").c_str());
     return true;
 }
 

@@ -131,7 +131,7 @@ int wmain(int argc,wchar_t** argv) {
     // Smaller displays must still render all pages without exposing a desktop window.
     Check(SUCCEEDED(chain->ResizeBuffers(0,800,600,DXGI_FORMAT_B8G8R8A8_UNORM,0)));
     SetWindowPos(window,nullptr,0,0,800,600,SWP_NOACTIVATE|SWP_NOZORDER);
-    for(int page:{0,1,2,3}){for(int i=0;i<3;++i)render(true,page);Capture(dev.Get(),gpu.Get(),chain.Get(),page==3&&argc>8?argv[8]:nullptr);}
+    for(int page:{0,1,2,3}){for(int i=0;i<3;++i)render(true,page);Capture(dev.Get(),gpu.Get(),chain.Get(),page==3&&argc>8?argv[8]:page==0&&argc>9?argv[9]:nullptr);}
     Check(SUCCEEDED(chain->ResizeBuffers(0,1024,768,DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,0)));
     SetWindowPos(window,nullptr,0,0,1024,768,SWP_NOACTIVATE|SWP_NOZORDER);
     overlay_ui::Request(8);for(int i=0;i<3;++i)render();Sleep(160);

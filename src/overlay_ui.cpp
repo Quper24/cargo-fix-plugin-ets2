@@ -67,6 +67,7 @@ MouseState previous_mouse_state = nullptr;
 MouseData previous_mouse_data = nullptr;
 ULONGLONG last_frame_time = 0;
 WORD cargo=0, freight=0, draft_cargo=0, draft_freight=0;
+WORD menu_binding=hotkeys::Menu,draft_menu=hotkeys::Menu;
 int capture = 0;
 std::array<bool,256> keys{};
 std::string notice, error;
@@ -96,7 +97,7 @@ void OpenMenu() {
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::RefreshTrailerCargos();
 #endif
-    menu=true; capture=0; error.clear(); draft_cargo=cargo; draft_freight=freight;
+    menu=true; capture=0; error.clear(); draft_cargo=cargo; draft_freight=freight;draft_menu=menu_binding;
     RECT bounds{};GetClientRect(game,&bounds);pointer.Begin(float(bounds.right),float(bounds.bottom));mouse_source=MouseSource::None;
     ImGui::GetIO().ClearInputMouse();
     Log("Menu opened: relative DirectInput cursor enabled; system cursor position is ignored.");
@@ -178,20 +179,20 @@ std::string BindingName(WORD binding) {
     if(GetKeyNameTextW(flags,name,100))out+=Utf8(name);else out+=std::to_string(binding&255);return out;
 }
 void Poll(bool focused) {
-    const bool m=Held(hotkeys::Menu),a=Held(cargo),b=Held(freight);
+    const bool m=Held(menu_binding),a=Held(cargo),b=Held(freight);
     if(operation.Active()){
         menu_was_down=m;cargo_down=a;freight_down=b;
         for(unsigned k=0;k<256;++k)keys[k]=Down(k);
         return;
     }
     if(focused) {
-        if(m&&!menu_was_down) { if(menu)CloseMenu();else OpenMenu(); }
-        else if(menu && Down(VK_ESCAPE) && !keys[VK_ESCAPE]) { if(capture)capture=0;else CloseMenu(); }
+        if(m&&!menu_was_down&&!(menu&&capture)) { if(menu)CloseMenu();else OpenMenu(); }
+        else if(menu && Down(VK_ESCAPE) && !keys[VK_ESCAPE]) { if(capture)capture=0;else if(!ImGui::GetIO().WantTextInput&&!ImGui::IsPopupOpen("",ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel))CloseMenu(); }
         else if(menu && capture) {
             for(unsigned key=8;key<255;++key) if(Down(key)&&!keys[key]&&hotkeys::Valid(key)&&key!=VK_ESCAPE) {
                 const WORD value=static_cast<WORD>(key|(Down(VK_CONTROL)?0x200:0)|(Down(VK_SHIFT)?0x100:0)|(Down(VK_MENU)?0x400:0));
-                if(value==hotkeys::Menu) { error=Tr("This shortcut opens the menu.","Это сочетание открывает меню.");break; }
-                (capture==1?draft_cargo:draft_freight)=value;capture=0;error.clear();break;
+                if(capture!=3&&value==draft_menu) { error=Tr("This shortcut opens the menu.","Это сочетание открывает меню.");break; }
+                (capture==3?draft_menu:capture==1?draft_cargo:draft_freight)=value;capture=0;error.clear();break;
             }
         } else if(!menu) {
             if(release_actions) { if(!a&&!b)release_actions=false; }
@@ -284,9 +285,9 @@ void DrawMenu(int preview_page = -1) {
     }
 #endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
-    const float cards_y=194,cards_height=190,keyboard_y=410,hint_y=536,detail_y=561;
+    const float cards_y=194,cards_height=190,keyboard_y=410;
 #else
-    const float cards_y=156,cards_height=204,keyboard_y=385,hint_y=518,detail_y=545;
+    const float cards_y=156,cards_height=204,keyboard_y=385;
 #endif
     card(28,cards_y,410,cards_height);card(462,cards_y,410,cards_height);
     text(48,cards_y+20,23,white,Tr("Owned-trailer cargo","Грузы для прицепа"));
@@ -296,22 +297,39 @@ void DrawMenu(int preview_page = -1) {
     if(button(Tr("Refresh cargo","Обновить грузы"),48,cards_y+cards_height-62,370,42,true)) { Request(1);CloseMenu(); }
     if(button(Tr("Refresh orders","Обновить заказы"),482,cards_y+cards_height-62,370,42,true)) { Request(2);CloseMenu(); }
     text(32,keyboard_y,21,white,Tr("Keyboard shortcuts","Горячие клавиши"));
-    text(48,keyboard_y+43,15,muted,Tr("Refresh cargo","Обновление грузов"));text(482,keyboard_y+43,15,muted,Tr("Refresh orders","Обновление заказов"));
+    constexpr float columns[]={32,318,604};
+    constexpr float field_width=172,control_gap=8,reset_width=88,control_height=38;
+    const float label_y=keyboard_y+36,control_y=keyboard_y+60;
+    text(columns[0],label_y,15,muted,Tr("Open menu","Открыть меню"));
+    text(columns[1],label_y,15,muted,Tr("Refresh cargo","Обновление грузов"));
+    text(columns[2],label_y,15,muted,Tr("Refresh orders","Обновление заказов"));
+    const auto menu_key=(capture==3?std::string(Tr("Press a shortcut...","Нажмите сочетание...")):BindingName(draft_menu))+"##menu";
     const auto a=(capture==1?std::string(Tr("Press a shortcut...","Нажмите сочетание...")):BindingName(draft_cargo))+"##cargo";
     const auto b=(capture==2?std::string(Tr("Press a shortcut...","Нажмите сочетание...")):BindingName(draft_freight))+"##freight";
-    if(button(a.c_str(),48,keyboard_y+73,292,38))capture=1;
-    if(button(b.c_str(),482,keyboard_y+73,292,38))capture=2;
-    if(button(Tr("Clear##cargo","Сброс##cargo"),350,keyboard_y+73,68,38)){draft_cargo=0;capture=0;}
-    if(button(Tr("Clear##freight","Сброс##freight"),784,keyboard_y+73,68,38)){draft_freight=0;capture=0;}
-    text(32,hint_y,15,muted,Tr("Select a field and press a shortcut. Clear disables the binding.","Выберите поле и нажмите сочетание. «Сброс» отключает назначение."));
-    text(32,detail_y,15,muted,Tr("Available in the garage and while driving. Menu: Ctrl + Alt + F9.","Доступно в гараже и в пути. Меню: Ctrl + Alt + F9."));
+    if(button(menu_key.c_str(),columns[0],control_y,field_width,control_height))capture=3;
+    if(button(Tr("Default##menu","По умолч.##menu"),columns[0]+field_width+control_gap,control_y,reset_width,control_height)){draft_menu=hotkeys::Menu;capture=0;}
+    if(button(a.c_str(),columns[1],control_y,field_width,control_height))capture=1;
+    if(button(b.c_str(),columns[2],control_y,field_width,control_height))capture=2;
+    if(button(Tr("Clear##cargo","Сброс##cargo"),columns[1]+field_width+control_gap,control_y,reset_width,control_height)){draft_cargo=0;capture=0;}
+    if(button(Tr("Clear##freight","Сброс##freight"),columns[2]+field_width+control_gap,control_y,reset_width,control_height)){draft_freight=0;capture=0;}
+    text(32,keyboard_y+114,15,muted,Tr("Select a field and press a shortcut. Esc cancels input.","Выберите поле и нажмите сочетание. Esc отменяет ввод."));
+    const float warning_y=keyboard_y+138;
+    draw->AddRectFilled(pos(32,warning_y),pos(872,warning_y+32),IM_COL32(32,27,17,255),8*scale);
+    text(46,warning_y+8,15,IM_COL32(235,190,85,255),Tr("Forgot your shortcut? Close the game and delete CargoControl.ini next to the DLL.","Забыли клавиши? Закройте игру и удалите CargoControl.ini рядом с DLL."));
+    button("?##restore-shortcuts",838,warning_y+3,26,26);
+    if(ImGui::IsItemHovered()){
+        ImGui::BeginTooltip();ImGui::PushTextWrapPos(420*scale);
+        ImGui::TextUnformatted(Tr("Close the game and delete CargoControl.ini from bin/win_x64/plugins, next to Cargo Control's DLL. On the next launch, the menu shortcut returns to Ctrl + Alt + F9. All settings in this INI are reset. If the older CargoControlETS2.ini also exists, delete it too to prevent old action shortcuts from being imported.",
+            "Закройте игру и удалите CargoControl.ini из bin/win_x64/plugins, рядом с DLL Cargo Control. При следующем запуске меню снова открывается по Ctrl + Alt + F9. Все настройки из этого INI будут сброшены. Если остался старый CargoControlETS2.ini, удалите его тоже, чтобы прежние сочетания действий не загрузились повторно."));
+        ImGui::PopTextWrapPos();ImGui::EndTooltip();
+    }
     text(32,599,14,error.empty()?muted:white,error.empty()?Tr("Save to apply your shortcuts.","Изменения применяются после сохранения."):error.c_str());
     text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
     if(button(Tr("Save","Сохранить"),576,588,142,44,true)) {
-        if(!hotkeys::PairAllowed(draft_cargo,draft_freight))error=Tr("Choose different shortcuts.","Назначьте разные сочетания.");
-        else { wchar_t values[160]{};swprintf_s(values,L"Cargo=%u%cFreight=%u%c",unsigned(draft_cargo),0,unsigned(draft_freight),0);
+        if(!hotkeys::PairAllowed(draft_cargo,draft_freight,draft_menu))error=Tr("Choose different shortcuts for the menu and actions.","Назначьте разные сочетания для меню и действий.");
+        else { wchar_t values[160]{};swprintf_s(values,L"Menu=%u%cCargo=%u%cFreight=%u%c",unsigned(draft_menu),0,unsigned(draft_cargo),0,unsigned(draft_freight),0);
             if(!WritePrivateProfileSectionW(L"Bindings",values,ini.c_str()))error=Tr("Could not save settings.","Не удалось сохранить настройки.");
-            else {cargo=draft_cargo;freight=draft_freight;error.clear();CloseMenu();}
+            else {menu_binding=draft_menu;cargo=draft_cargo;freight=draft_freight;error.clear();CloseMenu();menu_was_down=Held(menu_binding);}
         }
     }
     if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
@@ -487,9 +505,11 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
 bool Initialize(const std::filesystem::path& directory,Logger log,bool install_hook) {
     std::lock_guard<std::recursive_mutex> guard(mutex);logger=log;ini=directory/L"CargoControl.ini";
     const auto read_ini=SettingsReadPath(directory);
+    menu_binding=hotkeys::MenuBinding(GetPrivateProfileIntW(L"Bindings",L"Menu",hotkeys::Menu,ini.c_str()));
     cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,read_ini.c_str()));
     freight=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Freight",0,read_ini.c_str()));
-    if(cargo==hotkeys::Menu)cargo=0;if(!hotkeys::PairAllowed(cargo,freight))freight=0;
+    if(cargo==menu_binding)cargo=0;if(!hotkeys::PairAllowed(cargo,freight,menu_binding))freight=0;
+    draft_menu=menu_binding;draft_cargo=cargo;draft_freight=freight;
     stopping=false;operation.Complete();busy_chain=nullptr;busy_drawn=reopen_catalog=false;menu_page=0;menu=false;capture=0;rendered=0;present_calls=0;input_calls=0;
     if(!install_hook)return true;
     WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"QSCargoDxProbe";

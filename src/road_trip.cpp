@@ -6,6 +6,7 @@
 #include "overlay_ui.h"
 #include "notifications.h"
 #include "ui_controls.h"
+#include "search_combo.h"
 #include <Windows.h>
 #include <imgui.h>
 #include <mutex>
@@ -273,21 +274,13 @@ void Draw(float scale,bool russian){
     if(!state->scanned){ImGui::TextWrapped("%s",tr("Select your car and read the loaded session. The window will reopen automatically.","Выберите свою машину и считайте загруженную сессию. Окно откроется автоматически."));return;}
     if(!state->own_car){ImGui::TextWrapped("%s",tr("Select your own car in Road Trip, then read the session again.","Выберите собственную машину в Road Trip и считайте сессию повторно."));return;}
     static std::uint64_t seen=UINT64_MAX;static std::string task,from,to,from_city,to_city;
-    static char search[128]{};
-    if(seen!=state->session){seen=state->session;task.clear();from.clear();to.clear();from_city.clear();to_city.clear();search[0]=0;}
+    if(seen!=state->session){seen=state->session;task.clear();from.clear();to.clear();from_city.clear();to_city.clear();}
     ImGui::Text("%s: %zu   %s: %zu",tr("Depots","Базы"),state->points.size(),tr("Tasks for your car","Задания для вашей машины"),state->tasks.size());
-    ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##rt-search",tr("Search names","Поиск по названиям"),search,sizeof(search));
     const Task* selected=nullptr;for(const auto& item:state->tasks)if(item.id==task)selected=&item;
     ImGui::TextUnformatted(tr("Delivery / vehicle transfer","Отправление / перегон автомобиля"));ImGui::SetNextItemWidth(-1);
-    if(ImGui::BeginCombo("##rt-task",selected?selected->name.c_str():tr("Choose...","Выберите..."))){
-        bool found=false;
-        for(const auto& item:state->tasks){if(!ContainsName(item.name,search))continue;ImGui::PushID(item.id.c_str());
-            found=true;
-            if(ImGui::Selectable(item.name.c_str(),item.id==task)){task=item.id;from.clear();to.clear();search[0]=0;}
-            ImGui::PopID();}
-        controls::NoMatches(found,russian);
-        ImGui::EndCombo();
-    }
+    std::vector<controls::Choice> task_choices;
+    for(const auto& item:state->tasks)task_choices.push_back({item.id,item.name});
+    if(controls::SearchCombo("rt-task",task,task_choices,russian,ContainsName)){from.clear();to.clear();}
     selected=nullptr;for(const auto& item:state->tasks)if(item.id==task)selected=&item;
     auto point_fields=[&](bool source){
         auto& city=source?from_city:to_city;auto& id=source?from:to;
@@ -298,22 +291,16 @@ void Draw(float scale,bool russian){
         ImGui::PushID(source?"rt-source":"rt-target");
         const auto row_y=ImGui::GetCursorPosY();
         ImGui::BeginGroup();ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(source?tr("Departure city","Город отправления"):tr("Destination city","Город назначения"));ImGui::SetNextItemWidth(width);
-        if(ImGui::BeginCombo("##city",cities.count(city)?cities[city].c_str():tr("Choose...","Выберите..."))){
-            std::vector<std::pair<std::string,std::string>> sorted(cities.begin(),cities.end());
-            std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second<b.second;});
-            bool found=false;
-            for(const auto& item:sorted){if(!ContainsName(item.second,search))continue;found=true;ImGui::PushID(item.first.c_str());
-                if(ImGui::Selectable(item.second.c_str(),item.first==city)){city=item.first;id.clear();search[0]=0;}ImGui::PopID();}
-            controls::NoMatches(found,russian);ImGui::EndCombo();}
+        std::vector<controls::Choice> city_choices;
+        for(const auto& item:cities)city_choices.push_back({item.first,item.second});
+        std::sort(city_choices.begin(),city_choices.end(),[](const auto& a,const auto& b){return a.name<b.name;});
+        if(controls::SearchCombo("rt-city",city,city_choices,russian,ContainsName))id.clear();
         ImGui::EndGroup();ImGui::SameLine(0,16*scale);ImGui::SetCursorPosY(row_y);ImGui::BeginGroup();
         ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(source?tr("Departure depot","База отправления"):tr("Destination depot","База назначения"));ImGui::SetNextItemWidth(width);
-        std::string label=tr("Choose...","Выберите...");for(const auto& p:state->points)if(p.id==id)label=p.name;
-        if(ImGui::BeginCombo("##depot",label.c_str())){
-            std::vector<const Point*> sorted;
-            for(const auto& p:state->points)if(p.city==city&&allowed&&Contains(*allowed,p.id)&&ContainsName(p.name,search))sorted.push_back(&p);
-            std::sort(sorted.begin(),sorted.end(),[](const auto* a,const auto* b){return a->name<b->name;});
-            for(const auto* p:sorted){ImGui::PushID(p->id.c_str());if(ImGui::Selectable(p->name.c_str(),p->id==id)){id=p->id;search[0]=0;}ImGui::PopID();}
-            controls::NoMatches(!sorted.empty(),russian);ImGui::EndCombo();}
+        std::vector<controls::Choice> depot_choices;
+        for(const auto& p:state->points)if(p.city==city&&allowed&&Contains(*allowed,p.id))depot_choices.push_back({p.id,p.name});
+        std::sort(depot_choices.begin(),depot_choices.end(),[](const auto& a,const auto& b){return a.name<b.name;});
+        controls::SearchCombo("rt-depot",id,depot_choices,russian,ContainsName);
         ImGui::EndGroup();ImGui::PopID();
     };
     point_fields(true);point_fields(false);

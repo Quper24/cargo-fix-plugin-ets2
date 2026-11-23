@@ -10,6 +10,11 @@ int main() {
     Check(PairAllowed(0,0) && PairAllowed(0x377,0x378));
     Check(!PairAllowed(0x377,0x377));
     Check(!PairAllowed(Menu,0) && !PairAllowed(0,Menu));
+    Check(MenuBinding(0)==Menu&&MenuBinding(0x1b)==Menu&&MenuBinding(0x10000)==Menu);
+    Check(MenuBinding(0x377)==0x377);
+    Check(PairAllowed(Menu,0,0x377)); // Old menu key can become an action.
+    Check(!PairAllowed(0x377,0,0x377)&&!PairAllowed(0,0x377,0x377));
+    Check(!PairAllowed(0,0,0)&&!PairAllowed(0,0,0x1b));
     Check(!Matches(0,true,false,false,false));
     Check(Matches(0x377,true,true,true,false));
     Check(!Matches(0x377,true,true,true,true)); // Extra Alt does not trigger.

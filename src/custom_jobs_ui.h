@@ -2,6 +2,7 @@
 #include "custom_jobs.h"
 #include "brand_palette.h"
 #include "ui_controls.h"
+#include "search_combo.h"
 #include <imgui.h>
 #include <array>
 #include <set>
@@ -13,7 +14,6 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     auto tr = [&](const char* en, const char* ru) { return russian ? ru : en; };
     static std::uint64_t session = UINT64_MAX;
     static std::string origin_city, origin_id, cargo_id, destination_city, destination_id;
-    static std::array<char, 128> search{};
     static int market = 0;
     static bool delivery_time_x4=false;
     static bool all_cargos=false;
@@ -21,7 +21,6 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if (session != state->session) {
         session = state->session;
         origin_city.clear(); origin_id.clear(); cargo_id.clear(); destination_city.clear(); destination_id.clear();
-        search.fill(0);
         delivery_time_x4=false;all_cargos=false;request_error.clear();
     }
     ImGui::SetWindowFontScale(scale * .5f);
@@ -83,9 +82,6 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         else
             ImGui::TextWrapped("%s",tr("Trailer cargo list unavailable. Read the loaded session again.","Не удалось получить грузы для прицепа. Считайте загруженную сессию заново."));
     }
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##catalog-search",tr("Search cities, companies or cargo","Поиск города, базы или груза"),search.data(),search.size());
-    auto visible = [&](const std::string& value) { return ContainsName(value,search.data()); };
     std::map<std::string,std::string> city_names,cargo_names;
     for(const auto& company:catalog.companies)city_names.emplace(company.city,company.city_name.empty()?company.city:company.city_name);
     for(const auto& cargo:catalog.cargos)cargo_names.emplace(cargo.id,cargo.name);
@@ -111,38 +107,20 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         bool changed = false;
         ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(label);ImGui::PushID(label);
         ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::BeginCombo("##value", selected.empty() ? tr("Select...", "Выберите...") : city_names[selected].c_str())) {
-            bool found=false;
-            for (const auto& city : sorted) if (visible(city.second)) {
-                found=true;
-                ImGui::PushID(city.first.c_str());
-                if(ImGui::Selectable(city.second.c_str(),selected==city.first)){selected=city.first;changed=true;search.fill(0);}
-                ImGui::PopID();
-            }
-            controls::NoMatches(found,russian);
-            ImGui::EndCombo();
-        }
+        std::vector<controls::Choice> choices;
+        for(const auto& city:sorted)choices.push_back({city.first,city.second});
+        changed=controls::SearchCombo("city",selected,choices,russian,ContainsName);
         ImGui::PopID();return changed;
     };
     auto base_select = [&](const char* label, const std::string& city, std::string& selected, bool destination) {
-        const auto* company = find_company(selected);
         bool changed = false;
         ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(label);ImGui::PushID(label);
         ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::BeginCombo("##value", company ? company->name.c_str() : tr("Select...", "Выберите..."))) {
-            std::vector<const Company*> bases;
-            for(const auto& base:catalog.companies)
-                if(base.city==city && visible(base.name) && (!destination || receiver_allowed(base)))bases.push_back(&base);
-            std::sort(bases.begin(),bases.end(),[](const auto* a,const auto* b){return a->name==b->name?a->id<b->id:a->name<b->name;});
-            for (const auto* item : bases) {
-                const auto& base=*item;
-                ImGui::PushID(base.id.c_str());
-                if (ImGui::Selectable(base.name.c_str(), base.id == selected)) { selected = base.id; changed = true;search.fill(0); }
-                ImGui::PopID();
-            }
-            controls::NoMatches(!bases.empty(),russian);
-            ImGui::EndCombo();
-        }
+        std::vector<controls::Choice> choices;
+        for(const auto& base:catalog.companies)
+            if(base.city==city&&(!destination||receiver_allowed(base)))choices.push_back({base.id,base.name});
+        std::sort(choices.begin(),choices.end(),[](const auto& a,const auto& b){return a.name==b.name?a.id<b.id:a.name<b.name;});
+        changed=controls::SearchCombo("company",selected,choices,russian,ContainsName);
         ImGui::PopID();return changed;
     };
     if(ImGui::BeginTable("origin-fields",2,ImGuiTableFlags_SizingStretchSame)){
@@ -162,20 +140,11 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         cargo_id.clear(); destination_city.clear();destination_id.clear();
     }
     ImGui::TextUnformatted(tr("Cargo","Груз"));ImGui::SetNextItemWidth(-FLT_MIN);
-    if (ImGui::BeginCombo("##cargo", cargo_id.empty() ? tr("Select...", "Выберите...") : cargo_label(cargo_id).c_str())) {
-        bool found=false;
-        auto sorted=available;
-        std::sort(sorted.begin(),sorted.end(),[&](const auto& a,const auto& b){return cargo_label(a)==cargo_label(b)?a<b:cargo_label(a)<cargo_label(b);});
-        for (const auto& cargo : sorted) if (visible(cargo_label(cargo))) {
-            found=true;
-            ImGui::PushID(cargo.c_str());
-            if(ImGui::Selectable(cargo_label(cargo).c_str(),cargo_id==cargo)) {
-                cargo_id=cargo;destination_city.clear();destination_id.clear();search.fill(0);
-            }
-            ImGui::PopID();
-        }
-        controls::NoMatches(found,russian);
-        ImGui::EndCombo();
+    std::vector<controls::Choice> cargo_choices;
+    for(const auto& id:available)cargo_choices.push_back({id,cargo_label(id)});
+    std::sort(cargo_choices.begin(),cargo_choices.end(),[](const auto& a,const auto& b){return a.name==b.name?a.id<b.id:a.name<b.name;});
+    if(controls::SearchCombo("cargo",cargo_id,cargo_choices,russian,ContainsName)){
+        destination_city.clear();destination_id.clear();
     }
     if(ImGui::BeginTable("destination-fields",2,ImGuiTableFlags_SizingStretchSame)){
         ImGui::TableNextColumn();
