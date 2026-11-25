@@ -140,7 +140,7 @@ def analyze(snapshot_root, output, selected):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--snapshot-root', type=Path, default=ROOT / 'diagnostics/executables')
-    parser.add_argument('--output', type=Path, default=ROOT / 'build-dev-research/custom-jobs')
+    parser.add_argument('--output', type=Path, default=ROOT / 'diagnostics/research/custom-jobs')
     parser.add_argument('--snapshot', choices=list(SNAPSHOTS), action='append')
     parser.add_argument('--emit-catalog-profiles', type=Path,
                         help='Explicitly generate exact-snapshot offline catalog address fixtures')

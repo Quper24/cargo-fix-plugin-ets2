@@ -8,6 +8,7 @@
 #include "menu_pointer.h"
 #include "brand_palette.h"
 #include "plugin_version.h"
+#include "ui_controls.h"
 #ifdef CARGO_CONTROL_ROAD_TRIP
 #include "road_trip.h"
 #include "coaches.h"
@@ -72,6 +73,9 @@ ULONGLONG last_frame_time = 0;
 WORD cargo=0, freight=0, draft_cargo=0, draft_freight=0;
 WORD menu_binding=hotkeys::Menu,draft_menu=hotkeys::Menu;
 int capture = 0;
+int scale_percent=130;
+bool scale_save_error=false;
+bool language_save_error=false;
 std::array<bool,256> keys{};
 std::string notice, error;
 NotificationLifetime lifetime;
@@ -139,7 +143,7 @@ void ReleaseRenderer() {
         if(ImGui::GetIO().BackendPlatformUserData) ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext(context); if(old!=context) ImGui::SetCurrentContext(old); context=nullptr;
     }
-    logo.Reset(); gpu.Reset(); device.Reset(); font=nullptr;
+    logo.Reset(); gpu.Reset(); device.Reset(); font=nullptr;controls::primary_font=nullptr;
 }
 bool LoadLogo() {
     constexpr int w=192,h=141;
@@ -167,9 +171,14 @@ bool StartRenderer(IDXGISwapChain* chain,const DXGI_SWAP_CHAIN_DESC& desc) {
         auto& io=ImGui::GetIO();io.IniFilename=nullptr; io.LogFilename=nullptr;
         io.ConfigFlags|=ImGuiConfigFlags_NoMouseCursorChange;
         wchar_t windows[MAX_PATH]{};GetWindowsDirectoryW(windows,MAX_PATH);
-        auto font_path=Utf8(std::wstring(windows)+L"\\Fonts\\segoeui.ttf");
-        font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),36.f,nullptr,io.Fonts->GetGlyphRangesCyrillic());
+        auto font_path=Utf8(std::wstring(windows)+L"\\Fonts\\seguisb.ttf");
+        font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,io.Fonts->GetGlyphRangesCyrillic());
+        if(!font){font_path=Utf8(std::wstring(windows)+L"\\Fonts\\segoeui.ttf");font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,io.Fonts->GetGlyphRangesCyrillic());}
+        const bool system_font=font!=nullptr;
         if(!font) font=io.Fonts->AddFontDefault();
+        io.FontDefault=font;io.FontGlobalScale=system_font?.5f:36.f/13.f;
+        font_path=Utf8(std::wstring(windows)+L"\\Fonts\\segoeuib.ttf");
+        if(system_font)controls::primary_font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,io.Fonts->GetGlyphRangesCyrillic());
         if(!ImGui_ImplWin32_Init(desc.OutputWindow) || !ImGui_ImplDX11_Init(device.Get(),gpu.Get())) { ReleaseRenderer(); return false; }
         ImGui::StyleColorsDark();auto& style=ImGui::GetStyle();style.WindowRounding=14;style.FrameRounding=8;style.WindowBorderSize=1;
         style.Colors[ImGuiCol_WindowBg]={0,0,0,1};style.Colors[ImGuiCol_Border]={.24f,.24f,.24f,1};
@@ -229,10 +238,14 @@ void Poll(bool focused) {
     for(unsigned k=0;k<256;++k)keys[k]=Down(k);
 }
 void DrawMenu(int preview_page = -1) {
-    auto& io=ImGui::GetIO();const float scale=std::min(1.f,std::min((io.DisplaySize.x-24)/900,(io.DisplaySize.y-24)/660));
+    notifications::Tick();
+    // Enlarge text and controls together, while keeping the entire menu on screen.
+    auto& io=ImGui::GetIO();const float scale=std::min(scale_percent/100.f,std::min((io.DisplaySize.x-24)/900,(io.DisplaySize.y-24)/660));
     if(scale<=0)return;
     static ImVec2 last_display{};
-    const bool resized=last_display.x!=io.DisplaySize.x||last_display.y!=io.DisplaySize.y;
+    static float last_scale=0;
+    const bool resized=last_display.x!=io.DisplaySize.x||last_display.y!=io.DisplaySize.y||last_scale!=scale;
+    last_scale=scale;
     last_display=io.DisplaySize;
     ImGui::SetNextWindowSize({900*scale,660*scale});
     ImGui::SetNextWindowPos({io.DisplaySize.x/2,io.DisplaySize.y/2},resized?ImGuiCond_Always:ImGuiCond_Appearing,{.5f,.5f});
@@ -244,15 +257,51 @@ void DrawMenu(int preview_page = -1) {
     auto card=[&](float x,float y,float w,float h){draw->AddRectFilled(pos(x,y),pos(x+w,y+h),IM_COL32(14,14,14,255),14*scale);draw->AddRect(pos(x,y),pos(x+w,y+h),IM_COL32(65,65,65,255),14*scale);};
     auto button=[&](const char* label,float x,float y,float w,float h,bool primary=false){
         ImGui::SetCursorScreenPos(pos(x,y));ImGui::SetWindowFontScale(scale*.5f);
+        if(primary && controls::primary_font)ImGui::PushFont(controls::primary_font);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{12*scale,std::max(0.f,(h*scale-ImGui::GetTextLineHeight())*.5f)});
         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign,{.5f,.5f});
         if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(std::min(1.f,accent.x*1.08f),std::min(1.f,accent.y*1.08f),std::min(1.f,accent.z*1.08f),1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(accent.x*.85f,accent.y*.85f,accent.z*.85f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1)); }
-        bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar(2);return hit;
+        bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar(2);
+        if(primary && controls::primary_font)ImGui::PopFont();return hit;
     };
     text(32,25,14,green,"QUPER SIMULATOR");text(30,54,34,white,"Cargo Control");
     text(32,108,17,muted,Tr("Your cargo market. Your rules.","Ваш рынок грузов. Ваши правила."));
     if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),pos(710,23),pos(842,120));
     if(button("X##top",850,18,30,30))CloseMenu();
+    text(440,38,16,scale_save_error?IM_COL32(255,160,120,255):muted,
+        scale_save_error?Tr("Could not save scale","Не удалось сохранить масштаб"):Tr("Interface scale","Масштаб интерфейса"));
+    int next_scale=scale_percent;
+    ImGui::BeginDisabled(scale_percent<=75);
+    if(button("-##scale",440,66,32,34))next_scale=std::max(75,scale_percent-10);
+    ImGui::EndDisabled();
+    char scale_label[48]{};
+    const int fitted=static_cast<int>(scale*100+.5f);
+    if(fitted<scale_percent)std::snprintf(scale_label,sizeof(scale_label),"%d%% (%d%%)",scale_percent,fitted);
+    else std::snprintf(scale_label,sizeof(scale_label),"%d%%",scale_percent);
+    text(482,74,18,white,scale_label);
+    ImGui::BeginDisabled(scale_percent>=300);
+    if(button("+##scale",590,66,32,34))next_scale=std::min(300,scale_percent+10);
+    ImGui::EndDisabled();
+    if(button(Tr("Reset##scale","Сброс##scale"),632,66,68,34))next_scale=130;
+    if(next_scale!=scale_percent)SetScalePercent(next_scale);
+    if(ImGui::IsMouseHoveringRect(pos(440,38),pos(700,100))){
+        ImGui::BeginTooltip();ImGui::SetWindowFontScale(scale*.5f);ImGui::PushTextWrapPos(360*scale);
+        ImGui::TextUnformatted(Tr("75-300%. Applied and saved automatically. The value in parentheses is the scale that fits your screen.",
+            "75–300%. Применяется и сохраняется автоматически. В скобках — масштаб, который помещается на экране."));
+        ImGui::PopTextWrapPos();ImGui::EndTooltip();
+    }
+    text(440,110,16,muted,Tr("Language","Язык"));
+    ImGui::SetCursorScreenPos(pos(510,105));ImGui::SetWindowFontScale(scale*.5f);
+    ImGui::SetNextItemWidth(190*scale);ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{6*scale,3*scale});
+    const auto language=notifications::Language();
+    const char* language_labels[]={Tr("Auto (game)","Авто (как в игре)"),"Русский","English"};
+    if(ImGui::BeginCombo("##language",language_labels[static_cast<int>(language)])){
+        for(int i=0;i<3;++i)if(ImGui::Selectable(language_labels[i],static_cast<int>(language)==i))
+            language_save_error=!notifications::SetLanguage(static_cast<interface_language::Choice>(i));
+        ImGui::EndCombo();
+    }
+    ImGui::PopStyleVar();
+    if(language_save_error){ImGui::SameLine();ImGui::TextUnformatted("!");if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",Tr("Could not save language","Не удалось сохранить язык"));}
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     int& page=menu_page;
     const int visible_page = preview_page >= 0 ? preview_page : page;
@@ -363,7 +412,7 @@ void DrawMenu(int preview_page = -1) {
 }
 void DrawBusy(){
     const int action=operation.Active();if(!action)return;
-    auto& io=ImGui::GetIO();const float scale=std::min(1.f,(io.DisplaySize.x-32)/520.f);
+    auto& io=ImGui::GetIO();const float scale=std::min(scale_percent/100.f,std::min((io.DisplaySize.x-32)/520.f,(io.DisplaySize.y-32)/176.f));
     const ImVec2 size{520*scale,176*scale};
     ImGui::GetBackgroundDrawList()->AddRectFilled({0,0},io.DisplaySize,IM_COL32(0,0,0,145));
     ImGui::SetNextWindowPos({io.DisplaySize.x*.5f,io.DisplaySize.y*.5f},ImGuiCond_Always,{.5f,.5f});
@@ -395,17 +444,17 @@ void DrawBusy(){
     ImGui::End();
 }
 void DrawNotice() {
-    auto& io=ImGui::GetIO();const float w=std::min(800.f,io.DisplaySize.x-24);
-    const float logo_width=132;const float body_width=std::max(120.f,w-logo_width-64);
-    ImVec2 size=font->CalcTextSizeA(20,body_width,body_width,notice.c_str());
-    const float h=std::max(164.f,size.y+76);
-    ImGui::SetNextWindowPos({io.DisplaySize.x/2,40},ImGuiCond_Always,{.5f,0});ImGui::SetNextWindowSize({w,h});
+    auto& io=ImGui::GetIO();const float scale=std::min(scale_percent/100.f,std::min((io.DisplaySize.x-24)/900.f,(io.DisplaySize.y-24)/660.f));
+    const float w=800*scale,body_width=(800-132-64)*scale;
+    ImVec2 size=font->CalcTextSizeA(20*scale,body_width,body_width,notice.c_str());
+    const float h=std::max(164*scale,size.y+76*scale);
+    ImGui::SetNextWindowPos({io.DisplaySize.x/2,40*scale},ImGuiCond_Always,{.5f,0});ImGui::SetNextWindowSize({w,h});
     ImGui::Begin("##cargo-result",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoScrollbar);
     const auto p=ImGui::GetWindowPos();auto* draw=ImGui::GetWindowDrawList();
-    draw->AddRectFilled(p,{p.x+4,p.y+h},green);
-    draw->AddText(font,16,{p.x+24,p.y+16},green,"CARGO CONTROL");
-    draw->AddText(font,20,{p.x+24,p.y+50},white,notice.c_str(),nullptr,body_width);
-    if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),{p.x+w-152,p.y+h-116},{p.x+w-20,p.y+h-19});
+    draw->AddRectFilled(p,{p.x+4*scale,p.y+h},green);
+    draw->AddText(font,16*scale,{p.x+24*scale,p.y+16*scale},green,"CARGO CONTROL");
+    draw->AddText(font,20*scale,{p.x+24*scale,p.y+50*scale},white,notice.c_str(),nullptr,body_width);
+    if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),{p.x+w-152*scale,p.y+h-116*scale},{p.x+w-20*scale,p.y+h-19*scale});
     ImGui::End();
 }
 bool IsMouse(void* instance) {
@@ -531,6 +580,7 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
 bool Initialize(const std::filesystem::path& directory,Logger log,bool install_hook) {
     std::lock_guard<std::recursive_mutex> guard(mutex);logger=log;ini=directory/L"CargoControl.ini";
     const auto read_ini=SettingsReadPath(directory);
+    scale_percent=std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Interface",L"ScalePercent",130,ini.c_str())),75,300);scale_save_error=language_save_error=false;
     menu_binding=hotkeys::MenuBinding(GetPrivateProfileIntW(L"Bindings",L"Menu",hotkeys::Menu,ini.c_str()));
     cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,read_ini.c_str()));
     freight=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Freight",0,read_ini.c_str()));
@@ -586,6 +636,14 @@ int Tick(bool ready) {std::lock_guard<std::recursive_mutex> guard(mutex);const a
 void FinishAction(bool show_catalog,int page){std::lock_guard<std::recursive_mutex> guard(mutex);if(operation.Active())Log("Operation feedback completed.");operation.Complete();busy_drawn=false;busy_chain=nullptr;progress_done=progress_total=0;reopen_catalog=show_catalog;reopen_page=page;}
 void SetProgress(std::uint64_t done,std::uint64_t total){std::lock_guard<std::recursive_mutex> guard(mutex);progress_total=total;progress_done=std::min(done,total);}
 void CancelPending(){FinishAction(false);}
+int ScalePercent(){std::lock_guard<std::recursive_mutex> guard(mutex);return scale_percent;}
+bool SetScalePercent(int percent){
+    std::lock_guard<std::recursive_mutex> guard(mutex);percent=std::clamp(percent,75,300);
+    const auto value=std::to_wstring(percent);
+    scale_save_error=!WritePrivateProfileStringW(L"Interface",L"ScalePercent",value.c_str(),ini.c_str());
+    if(scale_save_error)return false;
+    scale_percent=percent;return true;
+}
 Diagnostics Inspect() { std::lock_guard<std::recursive_mutex> guard(mutex);return {rendered,present_calls.load(),input_calls.load(),logo!=nullptr,context!=nullptr,operation.Active(),menu}; }
 void Shutdown() {
     stopping=true;

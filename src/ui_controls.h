@@ -4,8 +4,14 @@
 #include <algorithm>
 
 namespace controls {
+inline ImFont* primary_font=nullptr;
+struct PrimaryFont {
+    PrimaryFont(){if(primary_font)ImGui::PushFont(primary_font);}
+    ~PrimaryFont(){if(primary_font)ImGui::PopFont();}
+};
 // Keep the label readable through normal, hover and pressed states.
 inline bool PrimaryButton(const char* label,ImVec2 size,bool enabled=true){
+    PrimaryFont weight;
     ImGui::BeginDisabled(!enabled);
     if(enabled){
         const ImVec4 color(brand_palette::Red/255.f,brand_palette::Green/255.f,brand_palette::Blue/255.f,1);

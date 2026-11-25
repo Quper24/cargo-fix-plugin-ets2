@@ -14,6 +14,8 @@ void CancelPending();
 void FinishAction(bool show_catalog=false,int page=1);
 void SetProgress(std::uint64_t done,std::uint64_t total);
 void Shutdown();
+int ScalePercent();
+bool SetScalePercent(int percent);
 struct Diagnostics { std::uint64_t frames; std::uint64_t present_calls; std::uint64_t input_calls; bool logo; bool ready; int operation; bool menu; };
 Diagnostics Inspect();
 }

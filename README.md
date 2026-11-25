@@ -1,6 +1,6 @@
-# Cargo Control 1.3.3
+# Cargo Control 1.3.4
 
-Поэтапное чтение каталога с прогрессом, кэш повторяющихся определений грузов и баз, поиск прямо в полях выбора и настраиваемое сочетание открытия меню.
+Регулировка масштаба 75–300%, более плотный шрифт, жирные надписи на зелёных кнопках и выбор языка «Авто / Русский / English» прямо в меню.
 
 Плагин для **American Truck Simulator** и **Euro Truck Simulator 2**, Windows x64, DirectX 11. Меню по умолчанию: **Ctrl+Alt+F9**; сочетание можно изменить на вкладке «Рынки».
 
@@ -13,7 +13,7 @@
 - В ETS2 добавляет вкладку **Coaches**: массовое обновление рейсов штатным генератором и ручной маршрут из 2–24 точек, включая отправление и конечную остановку.
 - Замена одного предложения при создании разрешена автоматически, отдельных галочек подтверждения нет.
 
-[Установка и использование](docs/README-public-1.3.3.md) · [Изменения 1.3.3](docs/release-1.3.3.md) · [Совместимость](docs/version-compatibility.md)
+[Установка и использование](docs/README-public-1.3.4.md) · [Изменения 1.3.4](docs/release-1.3.4.md) · [Совместимость](docs/version-compatibility.md)
 
 ## Совместимость
 
@@ -23,7 +23,7 @@
 
 ## Сборка
 
-Главная ветка — `main`, разработка — `dev`. CMake 3.25+, MSVC x64 и SCS Telemetry SDK:
+Разработка и выпуски ведутся в ветке `main`. CMake 3.25+, MSVC x64 и SCS Telemetry SDK:
 
 ```powershell
 cmake -S . -B build-release -A x64 -DSCS_SDK_ROOT="путь/к/SDK" -DCARGO_CONTROL_BUILD_CHECKS=ON
@@ -31,6 +31,8 @@ cmake --build build-release --config Release
 ctest --test-dir build-release -C Release --output-on-failure
 ```
 
-Обычная сборка создаёт `CargoControl.dll` версии 1.3.3. Параметр `-DCARGO_CONTROL_DEVELOPMENT_BUILD=ON` создаёт `CargoControl-dev.dll` с пометкой dev. В каталоге плагинов игры оставляйте одну DLL Cargo Control.
+Обычная сборка создаёт `CargoControl.dll` версии 1.3.4. Параметр `-DCARGO_CONTROL_DEVELOPMENT_BUILD=ON` создаёт `CargoControl-dev.dll` с пометкой dev. В каталоге плагинов игры оставляйте одну DLL Cargo Control.
+
+Для локальной сборки используется `build-release`; её содержимое не входит в Git. Готовые выпуски находятся в `release`, журналы и снимки для проверки совместимости — в `diagnostics`, исследовательские отчёты — в `diagnostics/research`. SDK хранится в `vendor/download-sdk` и нужен для повторной сборки.
 
 [Предыдущий выпуск 1.3.0](docs/README-public-1.3.0.md) · [Сторонние компоненты](THIRD_PARTY_NOTICES.txt)

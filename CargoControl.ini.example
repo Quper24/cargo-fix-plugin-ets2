@@ -3,3 +3,10 @@
 [Bindings]
 Cargo=0
 Freight=0
+
+; Interface scale: 75-300 percent. Also adjustable in the menu; saved immediately.
+[Interface]
+ScalePercent=130
+; auto follows the game language: Russian for ru, English for all other languages.
+; Manual choices: ru, en.
+Language=auto

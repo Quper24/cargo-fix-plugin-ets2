@@ -31,7 +31,8 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(std::min(1.f,scan_color.x*1.08f),std::min(1.f,scan_color.y*1.08f),std::min(1.f,scan_color.z*1.08f),1));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(scan_color.x*.85f,scan_color.y*.85f,scan_color.z*.85f,1));
     ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1));
-    if(ImGui::Button(tr("Read loaded session","Считать загруженную сессию"),{300*scale,40*scale}))scan();
+    {controls::PrimaryFont weight;
+    if(ImGui::Button(tr("Read loaded session","Считать загруженную сессию"),{300*scale,40*scale}))scan();}
     ImGui::PopStyleColor(4);ImGui::PopStyleVar(2);
     ImGui::SameLine(0,16*scale);
     ImGui::TextDisabled("%s", tr("Data from your game", "Данные из вашей игры"));
@@ -182,9 +183,11 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(color.x*.85f,color.y*.85f,color.z*.85f,1));
         ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1));
     }
+    {controls::PrimaryFont weight;
     if(ImGui::Button(tr("Create job", "Создать заказ"),{180*scale,36*scale})){
         if(QueueCreation(request)){request_error.clear();create();}
         else request_error=tr("Request not queued. Read the session and try again.","Запрос не поставлен в очередь. Считайте сессию и повторите действие.");
+    }
     }
     if(can_create)ImGui::PopStyleColor(4);
     ImGui::PopStyleVar(2);ImGui::EndDisabled();

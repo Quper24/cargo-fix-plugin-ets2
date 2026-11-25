@@ -78,7 +78,7 @@ def schemas(image):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT/"build-dev-research/multimode/report.json")
+    parser.add_argument("--output", type=Path, default=ROOT/"diagnostics/research/multimode/report.json")
     args = parser.parse_args()
     report = {"scope":"Static metadata only; no runtime mutation or constructor validation", "snapshots":{}}
     for snapshot, exe in SNAPSHOTS.items():
