@@ -552,7 +552,15 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     }
 #endif
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
+    const bool scan_was_busy=custom_jobs::ScanBusy();
     custom_jobs::Observe(economy, ready);
+    if(scan_was_busy&&!custom_jobs::ScanBusy()){overlay_ui::FinishAction(true,1);return;}
+    if(custom_jobs::ScanBusy()){
+        custom_jobs::TickScan(economy);
+        if(custom_jobs::ScanBusy())overlay_ui::SetProgress(custom_jobs::ScanDone(),custom_jobs::ScanTotal());
+        else overlay_ui::FinishAction(true,1);
+        return;
+    }
 #endif
     if(OwnedRefreshBusy() || freight::Busy()){
         if(!ready){
@@ -567,6 +575,9 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     // Consume every request even in menus: never defer it until a future drive/save.
     const int action = overlay_ui::Tick(ready);
     struct FinishAction {int action;bool reopen=false;int page=1;~FinishAction(){
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+        if(custom_jobs::ScanBusy())return;
+#endif
 #ifdef CARGO_CONTROL_COACHES
         if(coaches::Busy())return;
 #endif
@@ -597,7 +608,7 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     else if (action == 1) RefreshOwnedCargo(economy);
     else if (action == 2 && g_enabled) freight::Request(economy);
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
-    else if(action==3 && g_enabled){custom_jobs::Scan(economy);finish.reopen=true;}
+    else if(action==3 && g_enabled){custom_jobs::Scan(economy);overlay_ui::SetProgress(custom_jobs::ScanDone(),custom_jobs::ScanTotal());finish.reopen=true;}
     else if (action == 4 && g_enabled) {
         const auto result=custom_jobs::ExecuteCreation(economy);
         const auto text=custom_jobs::CreationMessage(result,notifications::Russian());

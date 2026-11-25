@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(CargoControl VERSION 1.3.1 LANGUAGES C CXX RC)
+project(CargoControl VERSION 1.3.3 LANGUAGES C CXX RC)
 
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Build this plugin with 64-bit MSVC on Windows.")

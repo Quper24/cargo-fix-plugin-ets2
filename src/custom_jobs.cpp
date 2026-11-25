@@ -9,6 +9,7 @@
 #include <cstring>
 #include <mutex>
 #include <atomic>
+#include <chrono>
 
 namespace custom_jobs {
 namespace {
@@ -24,6 +25,10 @@ bool creation_supported=false;
 RequestQueue creation_queue;
 std::uintptr_t last_trailer=UINTPTR_MAX;
 std::atomic<bool> refresh_trailer{false};
+std::unique_ptr<CatalogScan> scan;
+std::shared_ptr<View> scan_view;
+std::uintptr_t scan_economy=0;
+std::uint64_t scan_started=0;
 bool Memory(std::uintptr_t address, void* bytes, std::size_t length) {
     if (!ReadableMemory(address, length)) return false;
     std::memcpy(bytes, reinterpret_cast<const void*>(address), length); return true;
@@ -63,6 +68,7 @@ void Initialize(std::uintptr_t base, std::size_t image_size, Logger logger) {
     Reset();
 }
 void Reset() {
+    scan.reset();scan_view.reset();scan_economy=0;
     last_economy = 0; was_ready = false;
     last_trailer=UINTPTR_MAX;refresh_trailer=false;
     auto next = std::make_shared<View>(); next->session = ++session; next->supported = pools != 0;
@@ -75,7 +81,7 @@ void Reset() {
     std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();view=std::move(next);
 }
 void Observe(std::uintptr_t economy, bool ready) {
-    if (was_ready && (!ready || economy != last_economy)) Reset();
+    if ((scan&&(!ready||economy!=scan_economy))||(was_ready&&(!ready||economy!=last_economy))) Reset();
     was_ready = ready; last_economy = ready ? economy : 0;
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     if(ready && creation_supported){
@@ -92,16 +98,18 @@ bool RoadTripOnly(std::uintptr_t company){std::vector<std::string> parts;return 
 void Scan(std::uintptr_t economy) {
     if (last_economy && last_economy != economy) Reset();
     last_economy = economy;
-    auto next = std::make_shared<View>(); next->session = session; next->supported = pools != 0;
+    scan.reset();scan_view.reset();
+    {std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();}
+    auto next = std::make_shared<View>(); next->session = ++session; next->supported = pools != 0;
     next->availability = availability;
     next->names_supported = name_code.localize != 0;
     next->creation_supported = creation_supported;
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     next->delivery_time_supported=delivery_time::Available();
 #endif
-    std::map<std::pair<LabelKind,std::uintptr_t>,std::string> cache;
+    auto cache=std::make_shared<std::map<std::pair<LabelKind,std::uintptr_t>,std::string>>();
     LabelReader labels;
-    if (name_code.localize) labels = [&](LabelKind kind,std::uintptr_t object) -> std::string {
+    if (name_code.localize) labels = [cache](LabelKind kind,std::uintptr_t object) -> std::string {
         if (kind == LabelKind::City) {
             if (!object || object>UINTPTR_MAX-0x118) return {};
             std::uintptr_t city = 0;
@@ -115,8 +123,8 @@ void Scan(std::uintptr_t economy) {
         }
         if (!LiveUnit(Memory,object)) return {};
         const auto key = std::make_pair(kind,object);
-        const auto known = cache.find(key);
-        if (known != cache.end()) return known->second;
+        const auto known = cache->find(key);
+        if (known != cache->end()) return known->second;
         unsigned offset = 0x10;
         if (kind == LabelKind::City) {
             unsigned char localized = 0;
@@ -135,10 +143,30 @@ void Scan(std::uintptr_t economy) {
             else text.assign(output.bytes.data(),output.length);
         }
         if (text.find("@@") != std::string::npos || (!text.empty() && !MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),nullptr,0))) text.clear();
-        cache.emplace(key,text); return text;
+        cache->emplace(key,text); return text;
     };
-    if (pools) next->scanned = BuildCatalog(Memory, economy, pools, next->catalog, next->error, labels);
-    else next->error = "The session catalog code is incompatible or ambiguous.";
+    if(!pools){next->error="The session catalog code is incompatible or ambiguous.";Publish(next);return;}
+    scan=std::make_unique<CatalogScan>();scan_view=next;scan_economy=economy;scan_started=GetTickCount64();
+    scan->Begin(Memory,economy,pools,std::move(labels));
+    Publish(std::make_shared<View>(*next));
+    if(log)log(("Session catalog scan started in frame batches: companies="+std::to_string(scan->Total())+".").c_str());
+}
+bool ScanBusy(){return scan!=nullptr;}
+std::uint64_t ScanDone(){return scan?scan->Done():0;}
+std::uint64_t ScanTotal(){return scan?scan->Total():0;}
+void TickScan(std::uintptr_t economy){
+    if(!scan)return;
+    if(economy!=scan_economy){Reset();return;}
+    const auto started=std::chrono::steady_clock::now();
+    for(unsigned count=0;count<256&&scan->Active();++count){
+        scan->Advance();
+        if(std::chrono::steady_clock::now()-started>=std::chrono::milliseconds(4))break;
+    }
+    if(scan->Active())return;
+    auto next=std::move(scan_view);next->error=scan->Error();next->scanned=next->error.empty();next->catalog=scan->Take();
+    if(log)log(("Session catalog unique definitions: company="+std::to_string(scan->CompanyDefinitions())+
+        ", cargo="+std::to_string(scan->CargoDefinitions())+", elapsed_ms="+std::to_string(GetTickCount64()-scan_started)+".").c_str());
+    scan.reset();scan_economy=0;
     if (log) {
         const auto message = "Session catalog scan: companies=" + std::to_string(next->catalog.companies.size()) +
             ", cargos=" + std::to_string(next->catalog.cargos.size()) +
@@ -225,9 +253,9 @@ void Shutdown() {
     creation_supported=false;pools=module=0;name_code={};log=nullptr;availability=Availability::UnsupportedCode;Reset();
 }
 #ifdef CARGO_CONTROL_CATALOG_PREVIEW
-void PreviewCatalog(Catalog catalog) {
+void PreviewCatalog(Catalog catalog,std::string error) {
     auto next = std::make_shared<View>(); next->session = ++session;
-    next->supported = next->scanned = true; next->catalog = std::move(catalog);
+    next->supported=true;next->scanned=error.empty();next->catalog=std::move(catalog);next->error=std::move(error);
     next->availability = Availability::Ready;
     next->names_supported = true;
     next->creation_supported = true;

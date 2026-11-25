@@ -47,6 +47,9 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if (!state->error.empty()) {
         ImGui::TextWrapped("%s", tr("Could not read the session catalog. See game.log.txt.",
                                   "Не удалось прочитать каталог сессии. Подробности в game.log.txt."));
+        ImGui::TextWrapped("%s",tr("Click Read loaded session to retry. If it fails again, share game.log.txt with the developer.",
+            "Нажмите «Считать загруженную сессию», чтобы повторить. Если ошибка повторится, передайте game.log.txt разработчику."));
+        return;
     }
     if (!state->scanned) {
         ImGui::TextWrapped("%s",tr("The window is temporarily hidden while reading. It reopens automatically when the data is ready.",

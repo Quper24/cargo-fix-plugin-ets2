@@ -29,6 +29,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdio>
+#include <unordered_map>
 using Microsoft::WRL::ComPtr;
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 namespace overlay_ui {
@@ -49,7 +50,9 @@ ComPtr<ID3D11Device> device;
 ComPtr<ID3D11DeviceContext> gpu;
 ComPtr<ID3D11ShaderResourceView> logo;
 HWND game = nullptr;
-WNDPROC previous_proc = nullptr;
+// A later plugin can keep our procedure in its chain even after renderer shutdown.
+// Preserve each window's forwarding target independently of renderer lifetime.
+std::unordered_map<HWND, WNDPROC> window_procedures;
 void* present_site = nullptr;
 using Present = HRESULT (STDMETHODCALLTYPE*)(IDXGISwapChain*,UINT,UINT);
 Present previous_present = nullptr;
@@ -103,23 +106,33 @@ void OpenMenu() {
     Log("Menu opened: relative DirectInput cursor enabled; system cursor position is ignored.");
 }
 LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
-    std::lock_guard<std::recursive_mutex> guard(mutex);
-    if(context && !stopping) {
-        ContextScope scope;
-        const bool mouse_message=(msg>=WM_MOUSEFIRST && msg<=WM_MOUSELAST) || msg==WM_MOUSELEAVE || msg==WM_NCMOUSEMOVE || msg==WM_NCMOUSELEAVE;
-        if(!(menu && mouse_message)) ImGui_ImplWin32_WndProcHandler(hwnd,msg,w,l);
-        if(menu) {
-            if((msg>=WM_MOUSEFIRST && msg<=WM_MOUSELAST) || (msg>=WM_KEYFIRST && msg<=WM_KEYLAST) || msg==WM_CHAR) return 0;
+    WNDPROC previous = nullptr;
+    {
+        std::lock_guard<std::recursive_mutex> guard(mutex);
+        const auto found = window_procedures.find(hwnd);
+        if(found != window_procedures.end()) previous = found->second;
+        if(context && !stopping && hwnd == game) {
+            ContextScope scope;
+            const bool mouse_message=(msg>=WM_MOUSEFIRST && msg<=WM_MOUSELAST) || msg==WM_MOUSELEAVE || msg==WM_NCMOUSEMOVE || msg==WM_NCMOUSELEAVE;
+            if(!(menu && mouse_message)) ImGui_ImplWin32_WndProcHandler(hwnd,msg,w,l);
+            if(menu) {
+                if((msg>=WM_MOUSEFIRST && msg<=WM_MOUSELAST) || (msg>=WM_KEYFIRST && msg<=WM_KEYLAST) || msg==WM_CHAR) return 0;
+            }
+            if(msg==WM_KILLFOCUS) CloseMenu();
         }
-        if(msg==WM_KILLFOCUS) CloseMenu();
+        if(msg == WM_NCDESTROY) window_procedures.erase(hwnd);
     }
-    return previous_proc ? CallWindowProcW(previous_proc,hwnd,msg,w,l) : DefWindowProcW(hwnd,msg,w,l);
+    // Never hold our renderer lock while calling another plugin's procedure.
+    return previous ? CallWindowProcW(previous,hwnd,msg,w,l) : DefWindowProcW(hwnd,msg,w,l);
 }
 void ReleaseRenderer() {
     CloseMenu();
-    if(game && previous_proc && reinterpret_cast<WNDPROC>(GetWindowLongPtrW(game,GWLP_WNDPROC))==WindowProc)
-        SetWindowLongPtrW(game,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(previous_proc));
-    previous_proc=nullptr; game=nullptr;
+    const auto found = window_procedures.find(game);
+    if(found != window_procedures.end() && reinterpret_cast<WNDPROC>(GetWindowLongPtrW(game,GWLP_WNDPROC))==WindowProc) {
+        if(SetWindowLongPtrW(game,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(found->second)))
+            window_procedures.erase(found);
+    }
+    game=nullptr;
     if(context) {
         auto* old=ImGui::GetCurrentContext(); ImGui::SetCurrentContext(context);
         if(ImGui::GetIO().BackendRendererUserData) ImGui_ImplDX11_Shutdown();
@@ -164,8 +177,21 @@ bool StartRenderer(IDXGISwapChain* chain,const DXGI_SWAP_CHAIN_DESC& desc) {
         style.Colors[ImGuiCol_ButtonActive]={.27f,.27f,.27f,1};style.Colors[ImGuiCol_Text]={1,1,1,1};
         style.Colors[ImGuiCol_NavCursor]=accent;style.Colors[ImGuiCol_TextSelectedBg]={accent.x,accent.y,accent.z,.4f};
         game=desc.OutputWindow;
-        SetLastError(0);previous_proc=reinterpret_cast<WNDPROC>(SetWindowLongPtrW(game,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(WindowProc)));
-        if(!previous_proc) { ReleaseRenderer();return false; }
+        if(window_procedures.find(game) == window_procedures.end()) {
+            // Raw WndProc chains have no API for removing a procedure buried under
+            // another plugin. Keep our code mapped until process exit so any saved
+            // callback remains callable, including after telemetry shutdown.
+            HMODULE pinned_module = nullptr;
+            if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                reinterpret_cast<LPCWSTR>(&WindowProc), &pinned_module)) {
+                Log("Cannot retain window callback module; interface initialization stopped.");
+                ReleaseRenderer();return false;
+            }
+            window_procedures.emplace(game, nullptr);
+            const auto previous = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(game,GWLP_WNDPROC,reinterpret_cast<LONG_PTR>(WindowProc)));
+            if(!previous) { window_procedures.erase(game);ReleaseRenderer();return false; }
+            window_procedures[game] = previous;
+        }
         LoadLogo();
     }
     Log("DirectX 11 in-game interface attached; no desktop overlay windows."); return true;

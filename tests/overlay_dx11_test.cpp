@@ -24,6 +24,12 @@ using Microsoft::WRL::ComPtr;
 namespace notifications { bool Russian() { return true; } void Show(const std::wstring&) {} }
 #define Check(ok) do { if(!(ok)) { std::fprintf(stderr,"DX11 check failed: line %d, error %lu\n",__LINE__,GetLastError());std::exit(1); } }while(0)
 void Log(const char* s) { std::puts(s); }
+WNDPROC chained_previous = nullptr;
+unsigned chained_calls = 0;
+LRESULT CALLBACK ChainedProcedure(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
+    ++chained_calls;
+    return CallWindowProcW(chained_previous, hwnd, msg, w, l);
+}
 void Capture(ID3D11Device* dev,ID3D11DeviceContext* gpu,IDXGISwapChain* chain,const wchar_t* path,bool menu_pixels=false,bool progress=false,bool catalog=false) {
     ComPtr<ID3D11Texture2D> back,copy;Check(SUCCEEDED(chain->GetBuffer(0,IID_PPV_ARGS(&back))));
     D3D11_TEXTURE2D_DESC desc{};back->GetDesc(&desc);desc.Usage=D3D11_USAGE_STAGING;desc.BindFlags=0;desc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;desc.MiscFlags=0;
@@ -150,9 +156,23 @@ int wmain(int argc,wchar_t** argv) {
     overlay_ui::FinishAction(true);
     render();
     Check(overlay_ui::Inspect().operation==0 && overlay_ui::Inspect().menu);
+    custom_jobs::PreviewCatalog({},"Cargo list exceeds the scan budget.");
+    for(int i=0;i<3;++i)render(true,1);
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>11?argv[11]:nullptr,false,false,true);
     custom_jobs::Reset();Check(!custom_jobs::Snapshot()->scanned);
 #endif
     overlay_ui::Shutdown();Check(GetWindowLongPtrW(window,GWLP_WNDPROC)==original_proc);
+    Check(overlay_ui::Initialize(std::filesystem::temp_directory_path(),Log,true));
+    render();
+    // Simulate a plugin installed after Cargo Control. Shutdown must preserve
+    // that plugin's chain and allow calls through our dormant procedure.
+    chained_previous = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ChainedProcedure)));
+    Check(chained_previous && chained_previous != reinterpret_cast<WNDPROC>(original_proc));
+    overlay_ui::Shutdown();
+    Check(GetWindowLongPtrW(window,GWLP_WNDPROC)==reinterpret_cast<LONG_PTR>(ChainedProcedure));
+    const auto before_message = chained_calls;
+    Check(SendMessageW(window, WM_NCHITTEST, 0, 0) == CallWindowProcW(reinterpret_cast<WNDPROC>(original_proc), window, WM_NCHITTEST, 0, 0));
+    Check(chained_calls > before_message);
     Check(overlay_ui::Initialize(std::filesystem::temp_directory_path(),Log,true));
     chain->Present(0,DXGI_PRESENT_TEST);Check(overlay_ui::Inspect().present_calls>0);
     ComPtr<IDirectInput8A> input;ComPtr<IDirectInputDevice8A> mouse;
@@ -165,6 +185,9 @@ int wmain(int argc,wchar_t** argv) {
     overlay_ui::Shutdown();
     Check(mouse->GetDeviceState(sizeof(mouse_state),&mouse_state)==original_result);
     mouse.Reset();input.Reset();
-    chain.Reset();gpu.Reset();dev.Reset();DestroyWindow(window);UnregisterClassW(cls.lpszClassName,cls.hInstance);branding::Shutdown();
+    chain.Reset();gpu.Reset();dev.Reset();
+    const auto before_destroy = chained_calls;
+    DestroyWindow(window);Check(chained_calls > before_destroy);
+    UnregisterClassW(cls.lpszClassName,cls.hInstance);branding::Shutdown();
     std::puts("DX11 pixels, branded logo, viewport preservation, resize, window procedure restore, Present/DirectInput hooks and exact UNORM/sRGB palette passed.");
 }

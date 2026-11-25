@@ -27,6 +27,10 @@ void Initialize(std::uintptr_t module, std::size_t image_size, Logger logger);
 void Reset();
 void Observe(std::uintptr_t economy, bool ready);
 void Scan(std::uintptr_t economy);
+bool ScanBusy();
+std::uint64_t ScanDone();
+std::uint64_t ScanTotal();
+void TickScan(std::uintptr_t economy);
 void RefreshTrailerCargos();
 bool RoadTripOnly(std::uintptr_t company);
 void EnableCreation(const GameProfile& core,const CreationCode& code,creation::Backend backend);
@@ -39,6 +43,6 @@ void Shutdown();
 bool ContainsName(std::string_view text, std::string_view query);
 #ifdef CARGO_CONTROL_CATALOG_PREVIEW
 // Offline renderer fixture only; this entry point is absent from the DLL.
-void PreviewCatalog(Catalog catalog);
+void PreviewCatalog(Catalog catalog,std::string error={});
 #endif
 }

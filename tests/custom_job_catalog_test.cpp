@@ -122,6 +122,35 @@ int main() {
     Check(!BuildCatalog(first.reader,first.economy,first.pools,catalog,error));
     std::vector<std::string> parts;
     Check(!UnitName(first.reader,UINTPTR_MAX-4,source,parts));
+    // A large mod map reuses company definitions and cargo pointers in many
+    // cities. Repeated instances must not exhaust the unique-read budget.
+    World large;large.bytes.resize(4*1024*1024);
+    const auto shared_cargo=large.Unit({"cargo","shared_mod"});
+    const auto shared_base=large.CompanyUnit("shared_base","city0",{},{});
+    std::uintptr_t shared_context=0;Check(Read(large.reader,shared_base+0x68,shared_context));
+    const auto shared_list=large.Alloc(50000*8);
+    for(unsigned i=0;i<50000;++i)large.Put(shared_list+i*8,shared_cargo);
+    for(auto offset:{0xa0u,0xc8u}){large.Put(shared_context+offset,shared_list);large.Put<std::uint64_t>(shared_context+offset+8,50000);}
+    const auto base_array=large.Alloc(24*8);
+    for(unsigned i=0;i<24;++i){
+        const auto city="city"+std::to_string(i);
+        const auto unit=large.Unit({"company","volatile","shared_base",city.c_str()});
+        large.Put(unit+0x10,shared_base);large.Put(unit+0x68,shared_context);large.Put(base_array+i*8,unit);
+    }
+    large.Put(large.economy+0x28,base_array);large.Put<std::uint64_t>(large.economy+0x30,24);
+    unsigned cargo_labels=0;
+    LabelReader count_labels=[&](LabelKind kind,std::uintptr_t){if(kind==LabelKind::Cargo)++cargo_labels;return std::string("Loaded name");};
+    CatalogScan incremental;Check(incremental.Begin(large.reader,large.economy,large.pools,count_labels));
+    for(unsigned i=0;i<256;++i)incremental.Advance();
+    Check(incremental.Active()&&incremental.Done()<incremental.Total());
+    while(incremental.Active())incremental.Advance();
+    Check(incremental.Error().empty()&&incremental.Done()==24&&incremental.CompanyDefinitions()==1&&incremental.CargoDefinitions()==1);
+    auto large_catalog=incremental.Take();Check(large_catalog.companies.size()==24&&large_catalog.cargos.size()==1&&cargo_labels==1);
+    for(const auto& company:large_catalog.companies)Check(company.outgoing.size()==1&&company.incoming.size()==1);
+    // Restarting/cancelling a partial scan must discard old definitions.
+    Check(incremental.Begin(large.reader,large.economy,large.pools));incremental.Advance();
+    Check(!incremental.Begin(large.reader,0,large.pools)&&!incremental.Active()&&!incremental.Error().empty());
+    Check(incremental.Take().companies.empty());
     // A separately loaded world completely replaces the old mod catalog.
     World second;
     const auto newcargo = second.Unit({"cargo","new_mod"});
