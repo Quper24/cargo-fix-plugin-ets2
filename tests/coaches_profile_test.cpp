@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include "coach_offer_lifetime.h"
 #include "coach_builder_probe.h"
 #include "coach_route.h"
 int main(int argc,char** argv){

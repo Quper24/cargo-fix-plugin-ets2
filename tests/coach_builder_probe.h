@@ -17,6 +17,7 @@ inline void __fastcall PushDistance(Vector* vector,const void* distance){Require
 inline unsigned __fastcall Duration(unsigned,unsigned base_time,void*,void*,unsigned){return base_time;}
 inline void __fastcall Unexpected(){Require(false);}
 inline void __fastcall IgnoreDiagnostic(){}
+inline void __fastcall DestroyOffer(void* unit){Write<unsigned>(unit,16,0);}
 inline std::vector<std::uint32_t> Addresses(const std::vector<unsigned char>& image,const Signature& signature,std::uint32_t root){
     std::vector<std::uint32_t> result(signature.count);result[0]=root;std::vector<unsigned> todo{0};
     auto bind=[&](short node,std::uint32_t pc){if(node<0)return;Require(!result[node]||result[node]==pc);if(!result[node]){result[node]=pc;todo.push_back(node);}};
@@ -31,7 +32,7 @@ inline std::vector<std::uint32_t> Addresses(const std::vector<unsigned char>& im
 }
 inline void Run(const std::vector<unsigned char>& image,const CoachesCode& code){
     auto* memory=static_cast<unsigned char*>(VirtualAlloc(nullptr,16384,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE));Require(memory!=nullptr);
-    const auto& app=signatures[append_index];const auto& val=signatures[validate_index];
+    const auto& app=signatures[append_index];const auto& val=signatures[validate_index];const auto& clr=signatures[clear_vector_index];
     auto app_pc=Addresses(image,app,code.append),val_pc=Addresses(image,val,code.validate);
     constexpr unsigned validation=0x1000;unsigned stub=0x2000,constant=0x3000;
     auto relocate=[&](const Signature& sig,const std::vector<std::uint32_t>& pc,unsigned output){
@@ -50,7 +51,7 @@ inline void Run(const std::vector<unsigned char>& image,const CoachesCode& code)
                     // The other three external helpers are identified by their
                     // checked native call sites, not an absolute EXE address.
                     const auto relative=pc[n]-root;
-                    if(&sig==&val)function=reinterpret_cast<std::uintptr_t>(IgnoreDiagnostic);
+                    if(&sig==&val || &sig==&clr)function=reinterpret_cast<std::uintptr_t>(IgnoreDiagnostic);
                     else{
                         if(relative==0x7c)function=reinterpret_cast<std::uintptr_t>(PushTarget);
                         if(relative==0x8a)function=reinterpret_cast<std::uintptr_t>(PushDistance);
@@ -64,7 +65,21 @@ inline void Run(const std::vector<unsigned char>& image,const CoachesCode& code)
         }
     };
     relocate(app,app_pc,0);relocate(val,val_pc,validation);
+    constexpr unsigned clearing=0x1800;
+    relocate(clr,Addresses(image,clr,code.clear_vector),clearing);
     DWORD old=0;Require(VirtualProtect(memory,0x3000,PAGE_EXECUTE_READ,&old)!=0);FlushInstructionCache(GetCurrentProcess(),memory,0x3000);
+    std::array<std::uintptr_t,2> offer_vtable{0,reinterpret_cast<std::uintptr_t>(DestroyOffer)};
+    std::array<std::array<unsigned char,32>,3> lifetime_offers{};
+    for(auto& unit:lifetime_offers){Write<std::uintptr_t>(unit.data(),0,reinterpret_cast<std::uintptr_t>(offer_vtable.data()));Write<unsigned>(unit.data(),8,0x80000002);Write<unsigned>(unit.data(),16,1);}
+    std::array<std::uintptr_t,2> lifetime_rows{reinterpret_cast<std::uintptr_t>(lifetime_offers[0].data()),reinterpret_cast<std::uintptr_t>(lifetime_offers[1].data())};
+    GameOfferVector lifetime_vector{0,lifetime_rows.data(),2,2};
+    auto native_clear=[&]{reinterpret_cast<void(__fastcall*)(GameOfferVector*)>(memory+clearing)(&lifetime_vector);};
+    coaches::ReplaceOffer(lifetime_vector,0,reinterpret_cast<std::uintptr_t>(lifetime_offers[2].data()),native_clear);
+    Require(lifetime_vector.data==lifetime_rows.data() && lifetime_vector.count==2);
+    Require(Read<unsigned>(lifetime_offers[0].data(),16)==0);
+    Require(Read<unsigned>(lifetime_offers[0].data(),8)==0x80000001); // Ref survived; destructive callback still ran.
+    Require(Read<unsigned>(lifetime_offers[1].data(),16)==1 && Read<unsigned>(lifetime_offers[2].data(),16)==1);
+    std::puts("Native Coaches clear destroys retained objects; replacement now clears only the removed offer.");
     alignas(16) std::array<unsigned char,0x128> planner{};
     std::array<unsigned char,0x90> settings{};Write<unsigned>(settings.data(),0x40,55);Write<unsigned>(settings.data(),0x3c,0);
     Write<std::uintptr_t>(planner.data(),8,reinterpret_cast<std::uintptr_t>(settings.data()));Write<unsigned>(planner.data(),0x1c,23);Write<unsigned>(planner.data(),0x20,23);

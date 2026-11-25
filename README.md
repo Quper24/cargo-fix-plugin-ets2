@@ -1,6 +1,6 @@
-# Cargo Control 1.3.4
+# Cargo Control 1.3.5
 
-Регулировка масштаба 75–300%, более плотный шрифт, жирные надписи на зелёных кнопках и выбор языка «Авто / Русский / English» прямо в меню.
+Исправлена ошибка жизненного цикла автобусных предложений Coaches, из-за которой после создания или обновления рейсов сохранение могло перестать загружаться. Сохранены масштаб 75–300% и выбор языка прямо в меню.
 
 Плагин для **American Truck Simulator** и **Euro Truck Simulator 2**, Windows x64, DirectX 11. Меню по умолчанию: **Ctrl+Alt+F9**; сочетание можно изменить на вкладке «Рынки».
 
@@ -13,7 +13,7 @@
 - В ETS2 добавляет вкладку **Coaches**: массовое обновление рейсов штатным генератором и ручной маршрут из 2–24 точек, включая отправление и конечную остановку.
 - Замена одного предложения при создании разрешена автоматически, отдельных галочек подтверждения нет.
 
-[Установка и использование](docs/README-public-1.3.4.md) · [Изменения 1.3.4](docs/release-1.3.4.md) · [Совместимость](docs/version-compatibility.md)
+[Установка и использование](docs/README-public-1.3.5.md) · [Изменения 1.3.5](docs/release-1.3.5.md) · [Совместимость](docs/version-compatibility.md)
 
 ## Совместимость
 
@@ -31,7 +31,7 @@ cmake --build build-release --config Release
 ctest --test-dir build-release -C Release --output-on-failure
 ```
 
-Обычная сборка создаёт `CargoControl.dll` версии 1.3.4. Параметр `-DCARGO_CONTROL_DEVELOPMENT_BUILD=ON` создаёт `CargoControl-dev.dll` с пометкой dev. В каталоге плагинов игры оставляйте одну DLL Cargo Control.
+Обычная сборка создаёт `CargoControl.dll` версии 1.3.5. Параметр `-DCARGO_CONTROL_DEVELOPMENT_BUILD=ON` создаёт `CargoControl-dev.dll` с пометкой dev. В каталоге плагинов игры оставляйте одну DLL Cargo Control.
 
 Для локальной сборки используется `build-release`; её содержимое не входит в Git. Готовые выпуски находятся в `release`, журналы и снимки для проверки совместимости — в `diagnostics`, исследовательские отчёты — в `diagnostics/research`. SDK хранится в `vendor/download-sdk` и нужен для повторной сборки.
 

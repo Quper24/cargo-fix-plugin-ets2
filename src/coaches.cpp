@@ -1,5 +1,6 @@
 #include "coaches.h"
 #include "coach_route.h"
+#include "coach_offer_lifetime.h"
 #include "custom_jobs.h"
 #include "custom_job_names.h"
 #include "owned_offers.h"
@@ -80,20 +81,14 @@ void Schedule(std::uintptr_t economy,std::uintptr_t stop,GameOfferVector& offers
             (Get<std::uintptr_t>(economy+0x168),economy,expiry,stop,static_cast<unsigned>(i));
     }
 }
-// Clear retains this native vector's storage. Refcounts transfer the prepared
-// list across native selection cleanup and removal of all old station events.
+// Clear only the removed offer; the other station offers must stay live for saving.
 bool Install(std::uintptr_t economy,std::uintptr_t stop,std::size_t slot,std::uintptr_t replacement){
     GameOfferVector* offers=nullptr;
     if(!Offers(stop,offers)||slot>=offers->count)return false;
-    std::vector<std::uintptr_t> prepared(offers->data,offers->data+offers->count);
-    for(std::size_t i=0;i<prepared.size();++i){
-        if(!LiveUnit(Memory,prepared[i]))return false;
-    }
-    for(std::size_t i=0;i<prepared.size();++i)if(i!=slot)
-        InterlockedIncrement(reinterpret_cast<volatile LONG*>(prepared[i]+8));
-    prepared[slot]=replacement;
-    Native<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(code.clear)(stop,economy);
-    std::copy(prepared.begin(),prepared.end(),offers->data);offers->count=prepared.size();
+    for(std::size_t i=0;i<offers->count;++i)if(!LiveUnit(Memory,offers->data[i]))return false;
+    ReplaceOffer(*offers,slot,replacement,[&]{
+        Native<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(code.clear)(stop,economy);
+    });
     Schedule(economy,stop,*offers);return true;
 }
 std::string Label(std::uintptr_t unit,unsigned offset){
@@ -274,22 +269,11 @@ void Tick(std::uintptr_t economy){
             if(offers->count)previous.assign(offers->data,offers->data+offers->count);
             const bool valid=std::all_of(previous.begin(),previous.end(),[](auto unit){return LiveUnit(Memory,unit);});
             if(valid){
-                const auto table=offers->vtable;
-                for(auto unit:previous)InterlockedIncrement(reinterpret_cast<volatile LONG*>(unit+8));
-                Native<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(code.clear)(stop,economy);
-                Native<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(code.fill)(stop,economy);
-                bool added=false;
-                if(Offers(stop,offers))for(std::uint64_t i=0;i<offers->count;++i)if(Complete(offers->data[i]))added=true;
-                if(!added){
-                    // Native clear keeps capacity; generation may grow it but
-                    // does not shrink it. Transfer retained units back on failure.
-                    Native<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(code.clear)(stop,economy);
-                    std::copy(previous.begin(),previous.end(),offers->data);offers->count=previous.size();
-                    Schedule(economy,stop,*offers);++batch.kept;
-                }else{
-                    for(auto unit:previous)Release(unit,table);
-                    ++batch.changed;
-                }
+                const bool added=RegenerateOffers(*offers,
+                    [&]{Native<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(code.clear)(stop,economy);},
+                    [&]{Native<void(__fastcall*)(std::uintptr_t,std::uintptr_t)>(code.fill)(stop,economy);},
+                    [](auto unit){return Complete(unit);},[&]{Schedule(economy,stop,*offers);});
+                if(added)++batch.changed;else ++batch.kept;
             }else ++batch.kept;
         }else ++batch.kept;
         overlay_ui::SetProgress(batch.index,batch.stops.size());
