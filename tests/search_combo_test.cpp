@@ -4,6 +4,10 @@
 #include <cwctype>
 #define Check(value) do{if(!(value)){std::fprintf(stderr,"Search combo failed: line %d\n",__LINE__);std::exit(1);}}while(0)
 int main(){
+    std::mt19937 random{123};std::string selected="unchanged";
+    Check(!controls::ChooseRandom(selected,{},random) && selected=="unchanged");
+    const std::vector<controls::Choice> filtered={{"cal_city_a","A"},{"cal_city_b","B"}};
+    for(int i=0;i<100;++i){controls::ChooseRandom(selected,filtered,random);Check(selected=="cal_city_a" || selected=="cal_city_b");}
     ImGui::CreateContext();auto& io=ImGui::GetIO();io.IniFilename=nullptr;io.DisplaySize={800,600};io.DeltaTime=1.f/60;
     unsigned char* pixels;int w,h;io.Fonts->GetTexDataAsRGBA32(&pixels,&w,&h);
     std::string city="a",company;
@@ -30,6 +34,15 @@ int main(){
     // Arrow opens the same field, with keyboard focus in its editor.
     click(365,90);frame();frame();io.AddInputCharactersUTF8("Market");frame();frame();Check(key(ImGuiKey_Enter));Check(company=="y");
     click(70,50);frame();frame();click(70,40+ImGui::GetFrameHeight()+10);frame();Check(city=="a");
-    ImGui::DestroyContext();std::puts("Editable selectors: independent filtering, typing, arrow opening, keyboard selection, no matches and Escape passed.");
+    click(365,90);frame();frame();
+    Check(ImGui::GetCurrentContext()->OpenPopupStack.Size>0);
+    click(500,300);frame();
+    Check(ImGui::GetCurrentContext()->OpenPopupStack.Size==0);
+    Check(company=="y");
+    click(365,90);frame();frame();
+    Check(ImGui::GetCurrentContext()->OpenPopupStack.Size>0);
+    click(365,90);frame();
+    Check(ImGui::GetCurrentContext()->OpenPopupStack.Size==0);
+    ImGui::DestroyContext();std::puts("Editable selectors: filtering, keyboard, outside-click and arrow closing passed.");
 }
 

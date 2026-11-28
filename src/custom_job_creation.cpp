@@ -364,7 +364,8 @@ TrailerCargos ReadTrailerCargos(std::uintptr_t economy,std::uintptr_t pools,cons
     return result;
 }
 CreateResult Execute(std::uintptr_t economy,std::uintptr_t pools,const JobRequest& request){
-    auto result=[&](CreateStatus status){return CreateResult{status,request.market};};
+    bool approximate_distance=false;
+    auto result=[&](CreateStatus status){return CreateResult{status,request.market,approximate_distance};};
     if(!initialized)return result(CreateStatus::Unsupported);
     if(selected || !economy || !pools)return result(CreateStatus::NotReady);
     Selection selection;std::string target;
@@ -384,14 +385,14 @@ CreateResult Execute(std::uintptr_t economy,std::uintptr_t pools,const JobReques
     if(request.market==Market::OwnedTrailer){
         const auto trailer=TrailerData(economy);if(!trailer)return result(CreateStatus::TrailerRequired);
         if(!CargoFitsTrailer(Memory,selection.cargo,trailer))return result(CreateStatus::CargoUnavailable);
-        if(!ReadDirectRoute(Memory,selection.origin,selection.destination,selection.direct_route)){
-            if(logger)logger(("Direct owned job has no distance row: source="+request.origin+", destination="+request.destination+".").c_str());
+        if(!PrepareDirectRoute(Memory,selection.origin,selection.destination,selection.direct_route,approximate_distance)){
+            if(logger)logger(("Direct owned job has invalid distance data: source="+request.origin+", destination="+request.destination+".").c_str());
             return result(CreateStatus::RouteDataUnavailable);
         }
         if(logger)logger(("Direct owned job: cached_distance="+std::to_string(selection.direct_route.distance)+
             ", ferry="+std::to_string(selection.direct_route.ferry)+"; random-market country/skill/cargo-list filters are not applied.").c_str());
     }else if(request.all_cargos){
-        if(!ReadDirectRoute(Memory,selection.origin,selection.destination,selection.direct_route))return result(CreateStatus::RouteDataUnavailable);
+        if(!PrepareDirectRoute(Memory,selection.origin,selection.destination,selection.direct_route,approximate_distance))return result(CreateStatus::RouteDataUnavailable);
     }else{
         std::uintptr_t routes=0;std::uint64_t route_count=0;
         if(!Get(selection.origin+0x20,routes)||!Get(selection.origin+0x28,route_count)||route_count>1000000 ||
@@ -400,6 +401,8 @@ CreateResult Execute(std::uintptr_t economy,std::uintptr_t pools,const JobReques
         const auto cutoff=original_destinations(selection.origin,&destinations.values,0,context,selection.cargo,nullptr,0.f,0);
         if(FilterDestinations(&destinations.values,cutoff,selection.destination)!=UINT64_MAX)return result(CreateStatus::DestinationUnavailable);
     }
+    if(approximate_distance && logger)logger(("Direct job uses approximate distance="+std::to_string(selection.direct_route.distance)+
+        " km; ferry data unavailable; source="+request.origin+", destination="+request.destination+".").c_str());
     const auto status=request.market==Market::OwnedTrailer?Owned(economy,selection,target,now,deadline):Freight(economy,selection,target,now,deadline,request.allow_replace);
     if(logger){const auto message="Targeted creation result="+std::to_string(static_cast<int>(status))+", origin="+request.origin+", cargo="+request.cargo+", destination="+request.destination+", market="+std::to_string(static_cast<int>(request.market))+".";logger(message.c_str());}
     return result(status);

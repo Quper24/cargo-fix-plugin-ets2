@@ -20,6 +20,7 @@ std::streamoff log_offset=0;
 std::string log_language,partial_log_line;
 FILETIME process_started{};
 std::atomic<bool> russian{false};
+std::atomic<interface_language::Choice> detected{interface_language::Choice::English};
 void DetectLanguage() {
     std::ifstream config(home / L"config.cfg");
     auto language=interface_language::FromConfig(config);
@@ -44,6 +45,10 @@ void DetectLanguage() {
     }
     if(!log_language.empty())language=log_language;
     russian=interface_language::IsRussian(language);
+    auto value=interface_language::FromCode(language);
+    detected=value==interface_language::Choice::Auto?interface_language::Choice::English:value;
+    const auto selected=choice.load();
+    localization::active=selected==interface_language::Choice::Auto?detected.load():selected;
 }
 }
 void Initialize(const std::filesystem::path& plugin_dir, bool american_truck) {
@@ -52,7 +57,9 @@ void Initialize(const std::filesystem::path& plugin_dir, bool american_truck) {
     log_offset=0;log_language.clear();partial_log_line.clear();next_language_check=0;
     FILETIME exited{},kernel{},user{};GetProcessTimes(GetCurrentProcess(),&process_started,&exited,&kernel,&user);
     wchar_t saved[16]{};GetPrivateProfileStringW(L"Interface",L"Language",L"auto",saved,16,settings.c_str());
-    choice=_wcsicmp(saved,L"ru")==0?interface_language::Choice::Russian:_wcsicmp(saved,L"en")==0?interface_language::Choice::English:interface_language::Choice::Auto;
+    std::string saved_code;
+    for(const auto c:std::wstring(saved))saved_code+=static_cast<char>(c);
+    choice=interface_language::FromCode(saved_code);
     PWSTR documents = nullptr;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &documents))) {
         home = std::filesystem::path(documents) / (american_truck ? L"American Truck Simulator" : L"Euro Truck Simulator 2");
@@ -73,13 +80,25 @@ bool Russian() { return interface_language::Russian(choice.load(),russian.load()
 interface_language::Choice Language(){return choice.load();}
 bool SetLanguage(interface_language::Choice value){
     std::lock_guard<std::mutex> guard(language_mutex);
-    const auto name=value==interface_language::Choice::Russian?L"ru":value==interface_language::Choice::English?L"en":L"auto";
-    if(!WritePrivateProfileStringW(L"Interface",L"Language",name,settings.c_str()))return false;
-    choice=value;next_language_check=0;return true;
+    if(value<interface_language::Choice::Auto || value>=interface_language::Choice::Count)return false;
+    const std::string code=interface_language::Codes[static_cast<unsigned>(value)];
+    const std::wstring name(code.begin(),code.end());
+    if(!WritePrivateProfileStringW(L"Interface",L"Language",name.c_str(),settings.c_str()))return false;
+    choice=value;localization::active=value==interface_language::Choice::Auto?detected.load():value;next_language_check=0;return true;
 }
 std::wstring Translate(const wchar_t*, const wchar_t* english, const wchar_t* russian_text) {
     Tick();
-    return Russian() ? russian_text : english;
+    const int length=WideCharToMultiByte(CP_UTF8,0,english,-1,nullptr,0,nullptr,nullptr);
+    const int ru_length=WideCharToMultiByte(CP_UTF8,0,russian_text,-1,nullptr,0,nullptr,nullptr);
+    if(length<=0 || ru_length<=0)return english;
+    std::string en(length,0),ru(ru_length,0);
+    WideCharToMultiByte(CP_UTF8,0,english,-1,en.data(),length,nullptr,nullptr);
+    WideCharToMultiByte(CP_UTF8,0,russian_text,-1,ru.data(),ru_length,nullptr,nullptr);
+    const auto text=localization::Text(en.c_str(),ru.c_str());
+    const int count=MultiByteToWideChar(CP_UTF8,0,text,-1,nullptr,0);
+    if(count<=0)return english;
+    std::wstring result(count,0);MultiByteToWideChar(CP_UTF8,0,text,-1,result.data(),count);
+    result.resize(count-1);return result;
 }
 void Show(const std::wstring& message) { overlay_ui::Notify(message); }
 void Tick() {

@@ -90,8 +90,29 @@ int main(){
     Check(ReadDirectRoute(list.read,0x700,0xbbb,route));
     Check(route.destination==0xbbb && route.distance==250 && route.ferry==UINT16_MAX && route.reserved==0x4321);
     Check(!ReadDirectRoute(list.read,0x700,0xccc,route));
+    bool approximate=false;
+    Check(PrepareDirectRoute(list.read,0x700,0xbbb,route,approximate));
+    Check(!approximate && route.distance==250 && route.reserved==0x4321);
+    // Missing forward data uses only the reverse distance, never its ferry index.
+    list.Put<std::uintptr_t>(0xcec,0xd00);list.Put<std::uint64_t>(0xcf4,1);
+    list.Put(0xd00,DirectRouteRow{0x700,420,7,0x5678});
+    Check(PrepareDirectRoute(list.read,0x700,0xccc,route,approximate));
+    Check(approximate && route.destination==0xccc && route.distance==420 && route.ferry==UINT16_MAX && route.reserved==0);
+    list.Put<std::uint64_t>(0xcf4,0);
+    Check(PrepareDirectRoute(list.read,0x700,0xccc,route,approximate));
+    Check(approximate && route.distance==250); // Upper median of existing positive distances.
+    list.Put<std::uint64_t>(0x728,0);list.Put<std::uintptr_t>(0x720,0);
+    Check(PrepareDirectRoute(list.read,0x700,0xccc,route,approximate));
+    Check(approximate && route.distance==1000 && route.destination==0xccc);
+    list.Put<std::uint64_t>(0x728,1); // A nonempty table with a null pointer stays an error.
+    Check(!PrepareDirectRoute(list.read,0x700,0xccc,route,approximate));
+    Check(!approximate);
+    list.Put<std::uintptr_t>(0x720,0xff8);
+    Check(!PrepareDirectRoute(list.read,0x700,0xccc,route,approximate));
+    list.Put<std::uintptr_t>(0x720,0x800);list.Put<std::uint64_t>(0x728,2);
     Check(!ReadDirectRoute(list.read,UINTPTR_MAX-8,0xbbb,route));
     list.Put<std::uint64_t>(0x728,1000001);Check(!ReadDirectRoute(list.read,0x700,0xbbb,route));
+    Check(!PrepareDirectRoute(list.read,0x700,0xccc,route,approximate));
     // Trailer countries and cargo frequency/skills do not affect physical compatibility.
     list.Put<std::uintptr_t>(0x9a8,0xb00);list.Put<std::uint64_t>(0x9b0,1);list.Put<std::uint64_t>(0xb00,17);
     list.Put<std::uint64_t>(0xa48,17);list.Put<float>(0xa40,100);list.Put<float>(0xa30,1000);

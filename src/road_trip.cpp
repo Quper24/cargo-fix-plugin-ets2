@@ -15,6 +15,7 @@
 #include <optional>
 #include <atomic>
 #include <cstring>
+#include <cstdio>
 
 namespace road_trip {
 namespace {
@@ -37,7 +38,7 @@ template<class T> void Put(std::uintptr_t at,T value){std::memcpy(reinterpret_ca
 template<class Fn> Fn Native(std::uint32_t rva){return reinterpret_cast<Fn>(base+rva);}
 void Publish(std::shared_ptr<View> next){std::lock_guard<std::mutex> lock(mutex);view=std::move(next);}
 void Message(const char* en,const char* ru){
-    const auto* text=notifications::Russian()?ru:en;
+    const auto* text=localization::Text(en,ru);
     if(log)log(en);
     const int n=MultiByteToWideChar(CP_UTF8,0,text,-1,nullptr,0);std::wstring wide(n,L'\0');
     if(n){MultiByteToWideChar(CP_UTF8,0,text,-1,wide.data(),n);wide.resize(n-1);}notifications::Show(wide);
@@ -254,13 +255,15 @@ void Tick(std::uintptr_t economy){
     ++batch.index;overlay_ui::SetProgress(batch.index,batch.count);
     if(batch.index==batch.count){
         if(log)log(("Road Trip refresh finished: replaced="+std::to_string(batch.changed)+", preserved="+std::to_string(batch.kept)).c_str());
-        const auto en="Road Trip: refreshed "+std::to_string(batch.changed)+", preserved "+std::to_string(batch.kept)+". Reopen the Road Trip market.";
-        const auto ru="Road Trip: обновлено "+std::to_string(batch.changed)+", сохранено прежних "+std::to_string(batch.kept)+". Заново откройте рынок Road Trip.";
-        batch.active=false;Message(en.c_str(),ru.c_str());
+        const auto* format=localization::Text("Road Trip: refreshed %llu, preserved %llu. Reopen the Road Trip market.",
+            "Road Trip: обновлено %llu, сохранено прежних %llu. Заново откройте рынок Road Trip.");
+        char message[2048]{};std::snprintf(message,sizeof(message),format,
+            static_cast<unsigned long long>(batch.changed),static_cast<unsigned long long>(batch.kept));
+        batch.active=false;Message(message,message);
     }
 }
 void Draw(float scale,bool russian){
-    auto tr=[&](const char* en,const char* ru){return russian?ru:en;};const auto state=Snapshot();
+    auto tr=[&](const char* en,const char* ru){return localization::Text(en,ru,russian);};const auto state=Snapshot();
     ImGui::SetWindowFontScale(.5f*scale);
     if(!state->available){ImGui::TextWrapped("%s",tr("Could not initialize the Road Trip module. See game.log.txt.","Не удалось подключить модуль Road Trip. Подробности в game.log.txt."));return;}
     if(state->status==SessionStatus::NotLoaded){ImGui::TextWrapped("%s",tr("Load your game profile to detect Road Trip content.","Загрузите игровой профиль, чтобы проверить доступность Road Trip."));return;}

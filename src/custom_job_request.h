@@ -20,6 +20,7 @@ enum class CreateStatus {
 struct CreateResult {
     CreateStatus status=CreateStatus::Cancelled;
     Market market=Market::Freight;
+    bool approximate_distance=false;
     bool Success() const { return status==CreateStatus::Created || status==CreateStatus::AlreadyPresent; }
 };
 struct DirectRouteRow {
@@ -39,6 +40,34 @@ inline bool ReadDirectRoute(const Reader& read,std::uintptr_t company,std::uintp
         if(row.destination==destination){result=row;return true;}
     }
     return false;
+}
+inline bool PrepareDirectRoute(const Reader& read,std::uintptr_t company,std::uintptr_t destination,
+                               DirectRouteRow& result,bool& approximate){
+    result={};approximate=false;
+    std::uintptr_t rows=0;std::uint64_t count=0;
+    if(!company || company>UINTPTR_MAX-0x30 || !destination ||
+       !Read(read,company+0x20,rows) || !Read(read,company+0x28,count) || count>1000000 ||
+       (count && (!rows || rows>UINTPTR_MAX-count*sizeof(DirectRouteRow))))return false;
+    std::vector<std::uint16_t> distances;
+    for(std::uint64_t n=0;n<count;++n){
+        DirectRouteRow row;
+        if(!Read(read,rows+n*sizeof(row),row))return false;
+        if(row.destination==destination){result=row;return true;}
+        if(row.destination && row.distance)distances.push_back(row.distance);
+    }
+    // Reverse-direction ferry metadata belongs to a different route. Only reuse
+    // its distance; the approximate offer does not claim a known ferry crossing.
+    DirectRouteRow reverse;
+    std::uint16_t distance=1000; // Nominal kilometres when the depot has no distance data.
+    if(ReadDirectRoute(read,destination,company,reverse) && reverse.distance)distance=reverse.distance;
+    else if(!distances.empty()){
+        const auto middle=distances.begin()+distances.size()/2;
+        std::nth_element(distances.begin(),middle,distances.end());
+        distance=*middle;
+    }
+    result={destination,distance,UINT16_MAX,0};
+    approximate=true;
+    return true;
 }
 inline bool ValidSelection(const Catalog& catalog,const JobRequest& request) {
     if(request.origin.empty() || request.origin==request.destination || request.origin.size()>512 || request.destination.size()>512 || request.cargo.size()>512 ||

@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include "game_resolver.h"
 #include "custom_job_names.h"
+#include "localization.h"
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
 #include "delivery_time.h"
 #endif
@@ -22,6 +23,8 @@ Logger log = nullptr;
 Availability availability = Availability::UnsupportedCode;
 CatalogNameCode name_code{};
 bool creation_supported=false;
+bool american=false;
+std::atomic<bool> trailer_connected{false};
 RequestQueue creation_queue;
 std::uintptr_t last_trailer=UINTPTR_MAX;
 std::atomic<bool> refresh_trailer{false};
@@ -49,6 +52,10 @@ void UpdateTrailerCargos(View& next,std::uintptr_t economy){
 }
 }
 void Initialize(std::uintptr_t base, std::size_t image_size, Logger logger) {
+    trailer_connected=false;
+    wchar_t executable[MAX_PATH]{};
+    GetModuleFileNameW(reinterpret_cast<HMODULE>(base),executable,MAX_PATH);
+    american=_wcsicmp(std::filesystem::path(executable).filename().c_str(),L"amtrucks.exe")==0;
     module = base; pools = 0; last_economy = 0; log = logger;
     availability = Availability::UnsupportedCode;
     std::uint32_t rva = 0;
@@ -72,7 +79,7 @@ void Reset() {
     last_economy = 0; was_ready = false;
     last_trailer=UINTPTR_MAX;refresh_trailer=false;
     auto next = std::make_shared<View>(); next->session = ++session; next->supported = pools != 0;
-    next->availability = availability;
+    next->availability = availability;next->american=american;
     next->names_supported = name_code.localize != 0;
     next->creation_supported = creation_supported;
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
@@ -86,14 +93,20 @@ void Observe(std::uintptr_t economy, bool ready) {
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     if(ready && creation_supported){
         const auto current=Snapshot();
-        if(current->scanned && (refresh_trailer.exchange(false) || creation::TrailerIdentity(economy)!=last_trailer)){
-            auto next=std::make_shared<View>(*current);UpdateTrailerCargos(*next,economy);Publish(std::move(next));
+        const auto identity=creation::TrailerIdentity(economy);
+        const bool attached=trailer_connected && identity;
+        const bool refresh=current->scanned && (refresh_trailer.exchange(false) || identity!=last_trailer);
+        if(current->owned_trailer_attached!=attached || refresh){
+            auto next=std::make_shared<View>(*current);next->owned_trailer_attached=attached;
+            if(refresh)UpdateTrailerCargos(*next,economy);
+            Publish(std::move(next));
         }
 
     }
 #endif
 }
 void RefreshTrailerCargos(){refresh_trailer=true;}
+void SetTrailerConnected(bool connected){trailer_connected=connected;}
 bool RoadTripOnly(std::uintptr_t company){std::vector<std::string> parts;return pools && UnitName(Memory,pools,company,parts) && parts.size()==4 && RoadTripOnlyDepot(Memory,company,parts[2]);}
 void Scan(std::uintptr_t economy) {
     if (last_economy && last_economy != economy) Reset();
@@ -101,7 +114,7 @@ void Scan(std::uintptr_t economy) {
     scan.reset();scan_view.reset();
     {std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();}
     auto next = std::make_shared<View>(); next->session = ++session; next->supported = pools != 0;
-    next->availability = availability;
+    next->availability = availability;next->american=american;
     next->names_supported = name_code.localize != 0;
     next->creation_supported = creation_supported;
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
@@ -110,7 +123,7 @@ void Scan(std::uintptr_t economy) {
     auto cache=std::make_shared<std::map<std::pair<LabelKind,std::uintptr_t>,std::string>>();
     LabelReader labels;
     if (name_code.localize) labels = [cache](LabelKind kind,std::uintptr_t object) -> std::string {
-        if (kind == LabelKind::City) {
+        if (kind == LabelKind::City || kind == LabelKind::Region || kind == LabelKind::RegionId) {
             if (!object || object>UINTPTR_MAX-0x118) return {};
             std::uintptr_t city = 0;
             if (!Read(Memory,object+0x100,city)) return {};
@@ -120,6 +133,11 @@ void Scan(std::uintptr_t economy) {
                 city = reinterpret_cast<GetCity>(module+name_code.city_location)(object);
             }
             object = city;
+            if(kind != LabelKind::City){
+                std::string region_id;
+                object=CityRegion(Memory,pools,city,region_id);
+                if(kind==LabelKind::RegionId)return region_id;
+            }
         }
         if (!LiveUnit(Memory,object)) return {};
         const auto key = std::make_pair(kind,object);
@@ -190,7 +208,7 @@ void EnableCreation(const GameProfile& core,const CreationCode& code,creation::B
 bool QueueCreation(const JobRequest& request){
     std::lock_guard<std::mutex> lock(mutex);
     return view->creation_supported && view->scanned && request.session==view->session && ValidSelection(view->catalog,request) &&
-        (request.market!=Market::OwnedTrailer || view->trailer_cargos.Allows(request.cargo)) && creation_queue.Push(request);
+        (request.market!=Market::OwnedTrailer || (view->owned_trailer_attached && view->trailer_cargos.Allows(request.cargo))) && creation_queue.Push(request);
 }
 void CancelCreation(){std::lock_guard<std::mutex> lock(mutex);creation_queue.Clear();}
 CreateResult ExecuteCreation(std::uintptr_t economy){
@@ -201,6 +219,7 @@ CreateResult ExecuteCreation(std::uintptr_t economy){
     if(!was_ready || economy!=last_economy)result.status=CreateStatus::NotReady;
     else if(request->session!=session)result.status=CreateStatus::Cancelled;
     else if(!creation_supported)result.status=CreateStatus::Unsupported;
+    else if(request->market==Market::OwnedTrailer && !Snapshot()->owned_trailer_attached)result.status=CreateStatus::TrailerRequired;
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     else result=creation::Execute(economy,pools,*request);
 #endif
@@ -210,11 +229,17 @@ CreateResult ExecuteCreation(std::uintptr_t economy){
     return result;
 }
 std::string CreationMessage(CreateResult result,bool ru){
-    auto tr=[&](const char* en,const char* russian){return std::string(ru?russian:en);};
+    auto tr=[&](const char* en,const char* russian){return std::string(localization::Text(en,russian,ru));};
     switch(result.status){
-    case CreateStatus::Created:return result.market==Market::OwnedTrailer?
+    case CreateStatus::Created:{
+        std::string message=result.market==Market::OwnedTrailer?
         tr("Job created. Reopen the owned-trailer cargo market and find the offer at the selected source company.","Заказ создан. Заново откройте биржу грузов для своего прицепа и найдите предложение на выбранной базе отправления."):
         tr("Job created. Reopen the Freight market and find the offer at the selected source company.","Заказ создан. Заново откройте рынок грузоперевозок и найдите предложение на выбранной базе отправления.");
+        if(result.approximate_distance)message+=tr(
+            " Distance is approximate; ferry data is unavailable. Check the route, payment and delivery deadline before accepting.",
+            " Расстояние приблизительное, данные паромов отсутствуют. Проверьте маршрут, оплату и срок доставки перед принятием.");
+        return message;
+    }
     case CreateStatus::AlreadyPresent:return tr("This job is already available at the selected company.","Такой заказ уже есть на выбранной базе.");
     case CreateStatus::Unsupported:return tr("Job creation is unavailable for this game code. See game.log.txt.","Создание заказа недоступно для этого кода игры. Подробности в game.log.txt.");
     case CreateStatus::NotReady:return tr("The profile is not ready. Load the session and try again.","Профиль ещё не готов. Загрузите сессию и повторите действие.");

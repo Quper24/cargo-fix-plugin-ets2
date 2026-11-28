@@ -11,6 +11,8 @@ enum class Availability { UnsupportedCode, Ready };
 struct View {
     std::uint64_t session = 0;
     bool supported = false;
+    bool american = false;
+    bool owned_trailer_attached = false;
     bool scanned = false;
     bool names_supported = false;
     bool creation_supported = false;
@@ -32,6 +34,7 @@ std::uint64_t ScanDone();
 std::uint64_t ScanTotal();
 void TickScan(std::uintptr_t economy);
 void RefreshTrailerCargos();
+void SetTrailerConnected(bool connected);
 bool RoadTripOnly(std::uintptr_t company);
 void EnableCreation(const GameProfile& core,const CreationCode& code,creation::Backend backend);
 bool QueueCreation(const JobRequest& request);

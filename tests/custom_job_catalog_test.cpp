@@ -10,8 +10,8 @@ using namespace custom_jobs;
 struct World {
     std::vector<unsigned char> bytes = std::vector<unsigned char>(1024 * 1024);
     std::uintptr_t cursor = 0x1000, pools, economy;
-    std::uintptr_t token_tables[2]{};
-    unsigned next_row[2]{1,1};
+    std::uintptr_t token_tables[3]{};
+    unsigned next_row[3]{1,1,1};
     Reader reader = [this](std::uintptr_t at, void* output, std::size_t length) {
         if (at < 0x1000 || at > bytes.size() || length > bytes.size() - at) return false;
         std::memcpy(output, bytes.data() + at, length); return true;
@@ -29,13 +29,14 @@ struct World {
     }
     World() {
         pools = Alloc(2048 * 8); economy = Alloc(0x200);
-        for(unsigned index=0;index<2;++index) {
-            const auto pool = Alloc(0x90); token_tables[index] = Alloc(64 * (index ? 4 : 2) * 8);
-            Put(pools+index*8,pool); Put(pool,token_tables[index]); Put<std::uint8_t>(pool+0x88,index ? 4 : 2);
+        for(unsigned index=0;index<3;++index) {
+            const unsigned width=index==2?3:index?4:2;
+            const auto pool = Alloc(0x90); token_tables[index] = Alloc(64 * width * 8);
+            Put(pools+index*8,pool); Put(pool,token_tables[index]); Put<std::uint8_t>(pool+0x88,width);
         }
     }
     std::uintptr_t Unit(std::initializer_list<const char*> parts) {
-        const unsigned index = parts.size()==4 ? 1 : 0;
+        const unsigned index = parts.size()==3?2:parts.size()==4 ? 1 : 0;
         const auto row = next_row[index]++; Check(row < 64);
         const auto unit = Alloc(0x80); Put<std::uint32_t>(unit+8,0x80000001u);
         Put<std::uint32_t>(unit+0xc,(index<<20)|row);
@@ -88,10 +89,16 @@ int main() {
     LabelReader labels=[&](LabelKind kind,std::uintptr_t object) -> std::string {
         if(kind==LabelKind::Company)return mod_brand;
         if(kind==LabelKind::City)return object==source?"Анн-Арбор":"Кенора";
+        if(kind==LabelKind::RegionId)return object==source?"michigan":"ontario";
+        if(kind==LabelKind::Region)return object==source?"Мичиган":"Онтарио";
         return object==custom?"Соль":std::string{};
     };
     Check(BuildCatalog(first.reader,first.economy,first.pools,catalog,error,labels));
     Check(catalog.companies[0].id==source_id && catalog.companies[0].name=="FedEx" && catalog.companies[0].city_name=="Анн-Арбор");
+    Check(catalog.companies[0].region=="michigan" && catalog.companies[0].region_name=="Мичиган");
+    Check(InRegion(catalog.companies[0],"michigan") && !InRegion(catalog.companies[0],"ontario"));
+    Check(InRegion(catalog.companies[0],""));
+    Company unknown;Check(InRegion(unknown,"#unknown") && !InRegion(unknown,"michigan"));
     Check(catalog.label_fallbacks>0);
     bool translated=false;
     for(const auto& cargo:catalog.cargos)if(cargo.id=="cargo.mod_cargo9")translated=cargo.name=="Соль";
@@ -168,5 +175,16 @@ int main() {
     second.Put<std::uint32_t>(newbase+8,0x80000001u);
     second.Put<std::uint32_t>(newbase+0xc,0); // Anonymous/invalid units are never guessed.
     Check(!BuildCatalog(second.reader,second.economy,second.pools,catalog,error));
-    std::puts("Session catalog: live mod labels, unchanged IDs after renaming, native strings, mod data, rescan, new world and corrupt data passed.");
+    World regions;
+    const auto city=regions.Alloc(0x200);regions.Put<std::uint32_t>(city+8,0x80000001u);
+    const auto country=regions.Unit({"country","data","california"});
+    regions.Put(city+0x158,World::Encode("california"));regions.Put(city+0x160,country);
+    std::string region_id;
+    Check(CityRegion(regions.reader,regions.pools,city,region_id)==country && region_id=="california");
+    const auto other=regions.Unit({"country","data","nevada"});regions.Put(city+0x160,other);
+    Check(!CityRegion(regions.reader,regions.pools,city,region_id) && region_id=="california");
+    regions.Put<std::uint64_t>(city+0x158,0);
+    Check(!CityRegion(regions.reader,regions.pools,city,region_id) && region_id.empty());
+    Check(!CityRegion(regions.reader,regions.pools,UINTPTR_MAX-1,region_id));
+    std::puts("Session catalog: live mod labels, regions, native strings, rescan and corrupt data passed.");
 }

@@ -11,8 +11,11 @@
 namespace custom_jobs {
 using Reader = std::function<bool(std::uintptr_t, void*, std::size_t)>;
 struct Cargo { std::string id, name; };
-struct Company { std::string id, city, name; std::vector<std::string> outgoing, incoming; std::string city_name; };
-enum class LabelKind { Cargo, Company, City };
+struct Company { std::string id, city, name; std::vector<std::string> outgoing, incoming; std::string city_name, region, region_name; };
+inline bool InRegion(const Company& company,const std::string& region){
+    return region.empty() || region==(company.region.empty()?"#unknown":company.region);
+}
+enum class LabelKind { Cargo, Company, City, RegionId, Region };
 using LabelReader = std::function<std::string(LabelKind, std::uintptr_t)>;
 struct Catalog {
     std::vector<Company> companies;
@@ -130,6 +133,8 @@ public:
                 auto name=labels_(LabelKind::Company,context_),city=labels_(LabelKind::City,company);
                 if(!name.empty())entry_.name=std::move(name);else ++result_.label_fallbacks;
                 if(!city.empty())entry_.city_name=std::move(city);else ++result_.label_fallbacks;
+                entry_.region=labels_(LabelKind::RegionId,company);
+                entry_.region_name=labels_(LabelKind::Region,company);
             }
             auto cached=contexts_.find(context_);
             if(cached!=contexts_.end()){if(cached->second.valid)phase_=5;else Skip();return;}

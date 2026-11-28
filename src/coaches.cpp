@@ -37,7 +37,7 @@ template<class T>void Put(std::uintptr_t at,T value){std::memcpy(reinterpret_cas
 template<class T>T Native(std::uint32_t rva){return reinterpret_cast<T>(base+rva);}
 void Publish(std::shared_ptr<View> next){std::lock_guard<std::mutex> lock(mutex);view=std::move(next);}
 void Message(const char* en,const char* ru){
-    const auto text=notifications::Russian()?ru:en;
+    const auto text=localization::Text(en,ru);
     if(log)log(en);
     const int n=MultiByteToWideChar(CP_UTF8,0,text,-1,nullptr,0);std::wstring wide(n,L'\0');
     if(n){MultiByteToWideChar(CP_UTF8,0,text,-1,wide.data(),n);wide.resize(n-1);}notifications::Show(wide);
@@ -286,7 +286,7 @@ void Tick(std::uintptr_t economy){
     }
 }
 void Draw(float scale,bool russian){
-    auto tr=[&](const char* en,const char* ru){return russian?ru:en;};const auto state=Snapshot();
+    auto tr=[&](const char* en,const char* ru){return localization::Text(en,ru,russian);};const auto state=Snapshot();
     ImGui::SetWindowFontScale(.5f*scale);
     if(!state->available){ImGui::TextWrapped("%s",tr("Coaches code is incompatible with this game build. See game.log.txt.","Код Coaches несовместим с этой сборкой игры. Подробности в game.log.txt."));return;}
     if(!state->loaded){ImGui::TextWrapped("%s",tr("Load a profile with Coaches content enabled.","Загрузите профиль с подключённым Coaches."));return;}

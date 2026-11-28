@@ -7,9 +7,16 @@
 #include <vector>
 #include <cstdio>
 #include <functional>
+#include <random>
 
 namespace controls {
 struct Choice {std::string id,name;};
+inline bool ChooseRandom(std::string& selected,const std::vector<Choice>& choices,std::mt19937& random){
+    if(choices.empty())return false;
+    std::uniform_int_distribution<std::size_t> distribution(0,choices.size()-1);
+    const auto& id=choices[distribution(random)].id;
+    const bool changed=selected!=id;selected=id;return changed;
+}
 struct SearchState {
     std::array<char,2048> text{};
     std::string selected;
@@ -28,6 +35,7 @@ inline bool SearchCombo(const char* id,std::string& selected,const std::vector<C
     ImGui::PushID(id);auto& state=states[ImGui::GetID("field")];
     const auto popup_id="##options";
     bool open=ImGui::IsPopupOpen(popup_id);
+    bool close_requested=false;
     if(!open||state.selected!=selected){
         state.selected=selected;state.edited=false;state.cursor=0;
         std::string label;
@@ -38,7 +46,7 @@ inline bool SearchCombo(const char* id,std::string& selected,const std::vector<C
     const auto origin=ImGui::GetCursorScreenPos();
     ImGui::BeginGroup();ImGui::SetNextItemWidth(std::max(1.f,width-arrow));
     if(state.focus){ImGui::SetKeyboardFocusHere();state.focus=false;}
-    const bool enter=ImGui::InputTextWithHint("##text",russian?"Выберите или введите название...":"Choose or type a name...",
+    const bool enter=ImGui::InputTextWithHint("##text",localization::Text("Choose or type a name...","Выберите или введите название...",russian),
         state.text.data(),state.text.size(),ImGuiInputTextFlags_AutoSelectAll|ImGuiInputTextFlags_EnterReturnsTrue|ImGuiInputTextFlags_CallbackHistory,SearchHistory,&state);
     if(ImGui::IsItemEdited()){state.edited=true;state.cursor=0;}
     if(ImGui::IsItemActivated()){
@@ -46,7 +54,7 @@ inline bool SearchCombo(const char* id,std::string& selected,const std::vector<C
     }
     ImGui::SameLine(0,0);
     if(ImGui::ArrowButton("##arrow",ImGuiDir_Down)){
-        if(open){state.focus=false;}else{ImGui::OpenPopup(popup_id);state.focus=true;state.edited=false;state.cursor=0;}
+        if(open){state.focus=false;close_requested=true;}else{ImGui::OpenPopup(popup_id);state.focus=true;state.edited=false;state.cursor=0;}
     }
     ImGui::EndGroup();
     std::vector<std::size_t> filtered;
@@ -64,7 +72,11 @@ inline bool SearchCombo(const char* id,std::string& selected,const std::vector<C
         // Keep typing focus in the editor while drawing/hit-testing the list
         // above its parent. Focusing the popup would deactivate InputText.
         ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
-        if(ImGui::IsKeyPressed(ImGuiKey_Escape)){ImGui::CloseCurrentPopup();}
+        const auto popup_pos=ImGui::GetWindowPos(),popup_size=ImGui::GetWindowSize();
+        const bool in_field=ImGui::IsMouseHoveringRect(origin,{origin.x+width,origin.y+arrow},false);
+        const bool in_popup=ImGui::IsMouseHoveringRect(popup_pos,{popup_pos.x+popup_size.x,popup_pos.y+popup_size.y},false);
+        const bool outside=ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !in_field && !in_popup;
+        if(close_requested || outside || ImGui::IsKeyPressed(ImGuiKey_Escape)){state.focus=false;ImGui::CloseCurrentPopup();}
         else{
             controls::NoMatches(!filtered.empty(),russian);
             for(std::size_t row=0;row<filtered.size();++row){

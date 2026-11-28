@@ -1,5 +1,6 @@
 #pragma once
 #include "brand_palette.h"
+#include "localization.h"
 #include <imgui.h>
 #include <algorithm>
 
@@ -32,6 +33,6 @@ inline void Hint(const char* text){
     }
 }
 inline void NoMatches(bool found,bool russian){
-    if(!found)ImGui::TextDisabled("%s",russian?"Нет подходящих вариантов. Измените поиск или предыдущий выбор.":"No matches. Change the search or previous selection.");
+    if(!found)ImGui::TextDisabled("%s",localization::Text("No matches. Change the search or previous selection.","Нет подходящих вариантов. Измените поиск или предыдущий выбор.",russian));
 }
 }

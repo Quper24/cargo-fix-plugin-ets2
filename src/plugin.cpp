@@ -411,7 +411,7 @@ void TickOwnedRefresh(std::uintptr_t economy){
     auto& state=g_owned_refresh;
     if(!state.work.Active())return;
     if(economy!=state.economy || TrailerKey(economy)!=state.trailer){
-        state.work.Cancel();notifications::Show(L"Обновление грузов остановлено: сессия или прицеп изменились.");return;
+        state.work.Cancel();notifications::Show(notifications::Translate(L"TrailerChanged",L"Cargo refresh stopped: session or trailer changed.",L"Обновление грузов остановлено: сессия или прицеп изменились."));return;
     }
     const auto deadline=state.deadline,game_now=state.game_now;
     const auto real_now=state.real_now,started=state.started;
@@ -605,7 +605,14 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
     else if(action==9&&g_enabled)coaches::Refresh(economy);
     else if(action==10&&g_enabled)coaches::Create(economy);
 #endif
-    else if (action == 1) RefreshOwnedCargo(economy);
+    else if (action == 1) {
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+        if(!custom_jobs::Snapshot()->owned_trailer_attached)
+            notifications::Show(notifications::Translate(L"AttachTrailer",L"Attach your own trailer to refresh its cargo.",L"Прицепите собственный прицеп для обновления грузов."));
+        else
+#endif
+        RefreshOwnedCargo(economy);
+    }
     else if (action == 2 && g_enabled) freight::Request(economy);
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     else if(action==3 && g_enabled){custom_jobs::Scan(economy);overlay_ui::SetProgress(custom_jobs::ScanDone(),custom_jobs::ScanTotal());finish.reopen=true;}
@@ -621,6 +628,11 @@ void OnFrameStart(const scs_event_t, const void* info, const scs_context_t)
 
 }
 void OnPaused(const scs_event_t, const void*, const scs_context_t) { g_driving = false; }
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+void OnTrailerConnected(const scs_string_t,const scs_u32_t,const scs_value_t* const value,const scs_context_t){
+    custom_jobs::SetTrailerConnected(value && value->type==SCS_VALUE_TYPE_bool && value->value_bool.value);
+}
+#endif
 void OnStarted(const scs_event_t, const void*, const scs_context_t) { g_driving = true; freight::PrepareForDriving(); }
 } // namespace
 
@@ -640,6 +652,10 @@ SCSAPI_RESULT scs_telemetry_init(const scs_u32_t version, const scs_telemetry_in
         return SCS_RESULT_generic_error;
     }
     g_enabled = InitializeProfile();
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+    if(!p->register_for_channel || p->register_for_channel("trailer.connected",SCS_U32_NIL,SCS_VALUE_TYPE_bool,0,OnTrailerConnected,nullptr)!=SCS_RESULT_ok)
+        Log("Trailer connection telemetry unavailable; owned-trailer actions require a confirmed connection.");
+#endif
     return SCS_RESULT_ok;
 }
 

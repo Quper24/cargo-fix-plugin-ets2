@@ -47,6 +47,7 @@ Logger logger = nullptr;
 std::filesystem::path ini;
 ImGuiContext* context = nullptr;
 ImFont* font = nullptr;
+constexpr const ImWchar* interface_glyphs=interface_language::GlyphRanges;
 ComPtr<ID3D11Device> device;
 ComPtr<ID3D11DeviceContext> gpu;
 ComPtr<ID3D11ShaderResourceView> logo;
@@ -82,13 +83,28 @@ NotificationLifetime lifetime;
 std::uint64_t rendered = 0;
 std::atomic<std::uint64_t> present_calls{0}, input_calls{0};
 const ImVec4 accent{brand_palette::Red/255.f,brand_palette::Green/255.f,brand_palette::Blue/255.f,1};
-constexpr ImU32 white=IM_COL32(255,255,255,255), muted=IM_COL32(200,200,200,255), green=IM_COL32(brand_palette::Red,brand_palette::Green,brand_palette::Blue,255);
+bool light_theme=false,theme_save_error=false;
+ImU32 white=IM_COL32(255,255,255,255), muted=IM_COL32(200,200,200,255), green=IM_COL32(brand_palette::Red,brand_palette::Green,brand_palette::Blue,255);
+void ApplyTheme() {
+    if(light_theme)ImGui::StyleColorsLight();else ImGui::StyleColorsDark();
+    auto& colors=ImGui::GetStyle().Colors;
+    colors[ImGuiCol_WindowBg]=light_theme?ImVec4(.88f,.89f,.87f,1):ImVec4(.10f,.11f,.12f,1);
+    colors[ImGuiCol_Border]=light_theme?ImVec4(.65f,.7f,.64f,1):ImVec4(.24f,.24f,.24f,1);
+    colors[ImGuiCol_Button]=light_theme?ImVec4(.67f,.72f,.65f,1):ImVec4(.09f,.09f,.09f,1);
+    colors[ImGuiCol_ButtonHovered]=light_theme?ImVec4(.59f,.67f,.56f,1):ImVec4(.19f,.19f,.19f,1);
+    colors[ImGuiCol_ButtonActive]=light_theme?ImVec4(.51f,.61f,.48f,1):ImVec4(.27f,.27f,.27f,1);
+    colors[ImGuiCol_NavCursor]=accent;
+    colors[ImGuiCol_TextSelectedBg]={accent.x,accent.y,accent.z,.4f};
+    white=light_theme?IM_COL32(25,32,25,255):IM_COL32(255,255,255,255);
+    muted=light_theme?IM_COL32(75,85,75,255):IM_COL32(200,200,200,255);
+    green=light_theme?IM_COL32(48,105,40,255):IM_COL32(brand_palette::Red,brand_palette::Green,brand_palette::Blue,255);
+}
 void Log(const char* s) { if (logger) logger(s); }
 std::string Utf8(const std::wstring& s) {
     int n=WideCharToMultiByte(CP_UTF8,0,s.c_str(),static_cast<int>(s.size()),nullptr,0,nullptr,nullptr);
     std::string out(n,0); if(n) WideCharToMultiByte(CP_UTF8,0,s.c_str(),static_cast<int>(s.size()),out.data(),n,nullptr,nullptr); return out;
 }
-const char* Tr(const char* en,const char* ru) { return notifications::Russian()?ru:en; }
+const char* Tr(const char* en,const char* ru) { return localization::Text(en,ru); }
 bool Down(int k) { return (GetAsyncKeyState(k)&0x8000)!=0; }
 bool Held(WORD binding) { return !Down(VK_LWIN)&&!Down(VK_RWIN)&&hotkeys::Matches(binding,(binding&255)&&Down(binding&255),Down(VK_CONTROL),Down(VK_SHIFT),Down(VK_MENU)); }
 struct ContextScope {
@@ -147,14 +163,8 @@ void ReleaseRenderer() {
 }
 bool LoadLogo() {
     constexpr int w=192,h=141;
-    HDC dc=CreateCompatibleDC(nullptr); BITMAPINFO info{}; info.bmiHeader={sizeof(BITMAPINFOHEADER),w,-h,1,32,BI_RGB};
-    void* pixels=nullptr; HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,nullptr,0);
-    if(!dc || !bitmap) { if(bitmap) DeleteObject(bitmap); if(dc) DeleteDC(dc); return false; }
-    auto old=SelectObject(dc,bitmap); RECT r{0,0,w,h}; FillRect(dc,&r,reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
-    branding::PaintLogo(dc,r); GdiFlush();
-    std::vector<unsigned char> rgba(w*h*4); const auto* src=static_cast<unsigned char*>(pixels);
-    for(int i=0;i<w*h;++i) { rgba[i*4]=src[i*4+2]; rgba[i*4+1]=src[i*4+1]; rgba[i*4+2]=src[i*4]; rgba[i*4+3]=255; }
-    SelectObject(dc,old); DeleteObject(bitmap); DeleteDC(dc);
+    std::vector<unsigned char> rgba;
+    if(!branding::LogoPixels(w,h,rgba))return false;
     D3D11_TEXTURE2D_DESC desc{}; desc.Width=w;desc.Height=h;desc.MipLevels=1;desc.ArraySize=1;
     desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_IMMUTABLE;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
     D3D11_SUBRESOURCE_DATA data{rgba.data(),w*4,0}; ComPtr<ID3D11Texture2D> texture;
@@ -172,13 +182,13 @@ bool StartRenderer(IDXGISwapChain* chain,const DXGI_SWAP_CHAIN_DESC& desc) {
         io.ConfigFlags|=ImGuiConfigFlags_NoMouseCursorChange;
         wchar_t windows[MAX_PATH]{};GetWindowsDirectoryW(windows,MAX_PATH);
         auto font_path=Utf8(std::wstring(windows)+L"\\Fonts\\seguisb.ttf");
-        font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,io.Fonts->GetGlyphRangesCyrillic());
-        if(!font){font_path=Utf8(std::wstring(windows)+L"\\Fonts\\segoeui.ttf");font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,io.Fonts->GetGlyphRangesCyrillic());}
+        font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,interface_glyphs);
+        if(!font){font_path=Utf8(std::wstring(windows)+L"\\Fonts\\segoeui.ttf");font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,interface_glyphs);}
         const bool system_font=font!=nullptr;
         if(!font) font=io.Fonts->AddFontDefault();
         io.FontDefault=font;io.FontGlobalScale=system_font?.5f:36.f/13.f;
         font_path=Utf8(std::wstring(windows)+L"\\Fonts\\segoeuib.ttf");
-        if(system_font)controls::primary_font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,io.Fonts->GetGlyphRangesCyrillic());
+        if(system_font)controls::primary_font=io.Fonts->AddFontFromFileTTF(font_path.c_str(),72.f,nullptr,interface_glyphs);
         if(!ImGui_ImplWin32_Init(desc.OutputWindow) || !ImGui_ImplDX11_Init(device.Get(),gpu.Get())) { ReleaseRenderer(); return false; }
         ImGui::StyleColorsDark();auto& style=ImGui::GetStyle();style.WindowRounding=14;style.FrameRounding=8;style.WindowBorderSize=1;
         style.Colors[ImGuiCol_WindowBg]={0,0,0,1};style.Colors[ImGuiCol_Border]={.24f,.24f,.24f,1};
@@ -253,71 +263,86 @@ void DrawMenu(int preview_page = -1) {
     ImGui::Begin("Cargo Control",nullptr,ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar);
     const auto origin=ImGui::GetWindowPos(); auto* draw=ImGui::GetWindowDrawList();
     auto pos=[&](float x,float y){return ImVec2(origin.x+x*scale,origin.y+y*scale);};
-    auto text=[&](float x,float y,float size,ImU32 color,const char* value){draw->AddText(font,size*scale,pos(x,y),color,value,nullptr,0);};
-    auto card=[&](float x,float y,float w,float h){draw->AddRectFilled(pos(x,y),pos(x+w,y+h),IM_COL32(14,14,14,255),14*scale);draw->AddRect(pos(x,y),pos(x+w,y+h),IM_COL32(65,65,65,255),14*scale);};
+    auto text=[&](float x,float y,float size,ImU32 color,const char* value){
+        const float width=font->CalcTextSizeA(size,FLT_MAX,0,value).x;
+        const float available=900-x-28;
+        if(width>available)size*=available/width;
+        draw->AddText(font,size*scale,pos(x,y),color,value,nullptr,0);
+    };
+    auto paragraph=[&](float x,float y,const char* value){draw->AddText(font,16*scale,pos(x,y),muted,value,nullptr,370*scale);};
+    auto card=[&](float x,float y,float w,float h){draw->AddRectFilled(pos(x,y),pos(x+w,y+h),(light_theme?IM_COL32(223,227,220,255):IM_COL32(35,38,41,255)),14*scale);draw->AddRect(pos(x,y),pos(x+w,y+h),(light_theme?IM_COL32(166,177,163,255):IM_COL32(65,69,73,255)),14*scale);};
     auto button=[&](const char* label,float x,float y,float w,float h,bool primary=false){
         ImGui::SetCursorScreenPos(pos(x,y));ImGui::SetWindowFontScale(scale*.5f);
         if(primary && controls::primary_font)ImGui::PushFont(controls::primary_font);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{12*scale,std::max(0.f,(h*scale-ImGui::GetTextLineHeight())*.5f)});
         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign,{.5f,.5f});
         if(primary) { ImGui::PushStyleColor(ImGuiCol_Button,accent);ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(std::min(1.f,accent.x*1.08f),std::min(1.f,accent.y*1.08f),std::min(1.f,accent.z*1.08f),1));ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(accent.x*.85f,accent.y*.85f,accent.z*.85f,1));ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,1)); }
+        const float text_width=ImGui::CalcTextSize(label,nullptr,true).x;
+        if(text_width>w*scale-16*scale && text_width>0)ImGui::SetWindowFontScale(scale*.5f*(w*scale-16*scale)/text_width);
         bool hit=ImGui::Button(label,{w*scale,h*scale});if(primary)ImGui::PopStyleColor(4);ImGui::PopStyleVar(2);
         if(primary && controls::primary_font)ImGui::PopFont();return hit;
     };
+    int& page=menu_page;
+    const int visible_page=preview_page>=0?preview_page:page;
+    if(button(Tr("Markets", "Рынки"),32,136,164,40,visible_page==0)){page=0;capture=0;}
+    if(button(Tr("Settings","Настройки"),680,136,164,40,visible_page==4)){page=4;capture=0;}
     text(32,25,14,green,"QUPER SIMULATOR");text(30,54,34,white,"Cargo Control");
     text(32,108,17,muted,Tr("Your cargo market. Your rules.","Ваш рынок грузов. Ваши правила."));
-    if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),pos(710,23),pos(842,120));
+    if(logo)draw->AddImageRounded(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),pos(710,23),pos(842,120),{0,0},{1,1},IM_COL32_WHITE,10*scale);
     if(button("X##top",850,18,30,30))CloseMenu();
-    text(440,38,16,scale_save_error?IM_COL32(255,160,120,255):muted,
-        scale_save_error?Tr("Could not save scale","Не удалось сохранить масштаб"):Tr("Interface scale","Масштаб интерфейса"));
-    int next_scale=scale_percent;
-    ImGui::BeginDisabled(scale_percent<=75);
-    if(button("-##scale",440,66,32,34))next_scale=std::max(75,scale_percent-10);
-    ImGui::EndDisabled();
-    char scale_label[48]{};
-    const int fitted=static_cast<int>(scale*100+.5f);
-    if(fitted<scale_percent)std::snprintf(scale_label,sizeof(scale_label),"%d%% (%d%%)",scale_percent,fitted);
-    else std::snprintf(scale_label,sizeof(scale_label),"%d%%",scale_percent);
-    text(482,74,18,white,scale_label);
-    ImGui::BeginDisabled(scale_percent>=300);
-    if(button("+##scale",590,66,32,34))next_scale=std::min(300,scale_percent+10);
-    ImGui::EndDisabled();
-    if(button(Tr("Reset##scale","Сброс##scale"),632,66,68,34))next_scale=130;
-    if(next_scale!=scale_percent)SetScalePercent(next_scale);
-    if(ImGui::IsMouseHoveringRect(pos(440,38),pos(700,100))){
-        ImGui::BeginTooltip();ImGui::SetWindowFontScale(scale*.5f);ImGui::PushTextWrapPos(360*scale);
-        ImGui::TextUnformatted(Tr("75-300%. Applied and saved automatically. The value in parentheses is the scale that fits your screen.",
-            "75–300%. Применяется и сохраняется автоматически. В скобках — масштаб, который помещается на экране."));
-        ImGui::PopTextWrapPos();ImGui::EndTooltip();
+    if(visible_page==4){
+        text(440,198,16,scale_save_error?IM_COL32(255,160,120,255):muted,
+            scale_save_error?Tr("Could not save scale","Не удалось сохранить масштаб"):Tr("Interface scale","Масштаб интерфейса"));
+        int next_scale=scale_percent;
+        ImGui::BeginDisabled(scale_percent<=75);
+        if(button("-##scale",440,226,32,34))next_scale=std::max(75,scale_percent-10);
+        ImGui::EndDisabled();
+        char scale_label[48]{};
+        const int fitted=static_cast<int>(scale*100+.5f);
+        if(fitted<scale_percent)std::snprintf(scale_label,sizeof(scale_label),"%d%% (%d%%)",scale_percent,fitted);
+        else std::snprintf(scale_label,sizeof(scale_label),"%d%%",scale_percent);
+        text(482,234,18,white,scale_label);
+        ImGui::BeginDisabled(scale_percent>=300);
+        if(button("+##scale",590,226,32,34))next_scale=std::min(300,scale_percent+10);
+        ImGui::EndDisabled();
+        if(button(Tr("Reset##scale","Сброс##scale"),632,226,68,34))next_scale=130;
+        if(next_scale!=scale_percent)SetScalePercent(next_scale);
+        if(ImGui::IsMouseHoveringRect(pos(440,198),pos(700,260))){
+            ImGui::BeginTooltip();ImGui::SetWindowFontScale(scale*.5f);ImGui::PushTextWrapPos(360*scale);
+            ImGui::TextUnformatted(Tr("75-300%. Applied and saved automatically. The value in parentheses is the scale that fits your screen.",
+                "75–300%. Применяется и сохраняется автоматически. В скобках — масштаб, который помещается на экране."));
+            ImGui::PopTextWrapPos();ImGui::EndTooltip();
+        }
+        text(440,270,16,muted,Tr("Interface language","Язык интерфейса"));
+        ImGui::SetCursorScreenPos(pos(440,299));ImGui::SetWindowFontScale(scale*.5f);
+        ImGui::SetNextItemWidth(260*scale);ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{6*scale,3*scale});
+        const auto language=notifications::Language();
+        std::array<const char*,static_cast<unsigned>(interface_language::Choice::Count)> language_labels{};
+        std::copy(std::begin(interface_language::Names),std::end(interface_language::Names),language_labels.begin());
+        language_labels[0]=Tr("Auto (game)","Авто (как в игре)");
+        if(ImGui::BeginCombo("##language",language_labels[static_cast<int>(language)])){
+            for(int i=0;i<static_cast<int>(interface_language::Choice::Count);++i)if(ImGui::Selectable(language_labels[i],static_cast<int>(language)==i))
+                language_save_error=!notifications::SetLanguage(static_cast<interface_language::Choice>(i));
+            ImGui::EndCombo();
+        }
+        ImGui::PopStyleVar();
+        if(language_save_error){ImGui::SameLine();ImGui::TextUnformatted("!");if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",Tr("Could not save language","Не удалось сохранить язык"));}
     }
-    text(440,110,16,muted,Tr("Language","Язык"));
-    ImGui::SetCursorScreenPos(pos(510,105));ImGui::SetWindowFontScale(scale*.5f);
-    ImGui::SetNextItemWidth(190*scale);ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,{6*scale,3*scale});
-    const auto language=notifications::Language();
-    const char* language_labels[]={Tr("Auto (game)","Авто (как в игре)"),"Русский","English"};
-    if(ImGui::BeginCombo("##language",language_labels[static_cast<int>(language)])){
-        for(int i=0;i<3;++i)if(ImGui::Selectable(language_labels[i],static_cast<int>(language)==i))
-            language_save_error=!notifications::SetLanguage(static_cast<interface_language::Choice>(i));
-        ImGui::EndCombo();
-    }
-    ImGui::PopStyleVar();
-    if(language_save_error){ImGui::SameLine();ImGui::TextUnformatted("!");if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",Tr("Could not save language","Не удалось сохранить язык"));}
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
-    int& page=menu_page;
-    const int visible_page = preview_page >= 0 ? preview_page : page;
-    if(button(Tr("Markets", "Рынки"),32,136,164,40,visible_page==0))page=0;
+
+
     if(button(Tr("Create job", "Создать заказ"),212,136,208,40,visible_page==1))page=1;
 #ifdef CARGO_CONTROL_COACHES
-    if(coaches::Visible()&&button("Coaches",436,136,164,40,visible_page==3))page=3;
+    if(coaches::Visible()&&button(Tr("Buses","Автобусы"),436,136,164,40,visible_page==3))page=3;
     if((preview_page>=0?preview_page:page)==3&&coaches::Visible()){
         ImGui::SetWindowFontScale(1.f);ImGui::SetCursorScreenPos(pos(32,194));
         ImGui::BeginChild("coach-catalog",{836*scale,390*scale});
-        ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.08f,.08f,.08f,1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,ImVec4(.15f,.15f,.15f,1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,ImVec4(.2f,.2f,.2f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,(light_theme?ImVec4(.97f,.98f,.96f,1):ImVec4(.08f,.08f,.08f,1)));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,(light_theme?ImVec4(.8f,.86f,.78f,1):ImVec4(.15f,.15f,.15f,1)));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,(light_theme?ImVec4(.73f,.81f,.71f,1):ImVec4(.2f,.2f,.2f,1)));
         ImGui::PushStyleColor(ImGuiCol_CheckMark,accent);
-        ImGui::PushStyleColor(ImGuiCol_Header,ImVec4(.2f,.3f,.18f,1));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,ImVec4(.25f,.35f,.22f,1));
+        ImGui::PushStyleColor(ImGuiCol_Header,(light_theme?ImVec4(.75f,.86f,.71f,1):ImVec4(.2f,.3f,.18f,1)));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,(light_theme?ImVec4(.66f,.79f,.62f,1):ImVec4(.25f,.35f,.22f,1)));
         coaches::Draw(scale,notifications::Russian());ImGui::PopStyleColor(6);ImGui::EndChild();
         text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
         if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
@@ -329,12 +354,12 @@ void DrawMenu(int preview_page = -1) {
     if((preview_page>=0?preview_page:page)==2&&road_trip::Visible()){
         ImGui::SetWindowFontScale(1.f);ImGui::SetCursorScreenPos(pos(32,194));
         ImGui::BeginChild("road-trip-catalog",{836*scale,390*scale});
-        ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.08f,.08f,.08f,1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,ImVec4(.15f,.15f,.15f,1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,ImVec4(.2f,.2f,.2f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,(light_theme?ImVec4(.97f,.98f,.96f,1):ImVec4(.08f,.08f,.08f,1)));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,(light_theme?ImVec4(.8f,.86f,.78f,1):ImVec4(.15f,.15f,.15f,1)));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,(light_theme?ImVec4(.73f,.81f,.71f,1):ImVec4(.2f,.2f,.2f,1)));
         ImGui::PushStyleColor(ImGuiCol_CheckMark,accent);
-        ImGui::PushStyleColor(ImGuiCol_Header,ImVec4(.2f,.3f,.18f,1));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,ImVec4(.25f,.35f,.22f,1));
+        ImGui::PushStyleColor(ImGuiCol_Header,(light_theme?ImVec4(.75f,.86f,.71f,1):ImVec4(.2f,.3f,.18f,1)));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,(light_theme?ImVec4(.66f,.79f,.62f,1):ImVec4(.25f,.35f,.22f,1)));
         road_trip::Draw(scale,notifications::Russian());ImGui::PopStyleColor(6);ImGui::EndChild();
         text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
         if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
@@ -345,12 +370,12 @@ void DrawMenu(int preview_page = -1) {
         ImGui::SetWindowFontScale(1.f); // Child font scaling must not multiply the header button scale.
         ImGui::SetCursorScreenPos(pos(32,194));
         ImGui::BeginChild("session-catalog",{836*scale,390*scale});
-        ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.08f,.08f,.08f,1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,ImVec4(.15f,.15f,.15f,1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,ImVec4(.2f,.2f,.2f,1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,(light_theme?ImVec4(.97f,.98f,.96f,1):ImVec4(.08f,.08f,.08f,1)));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,(light_theme?ImVec4(.8f,.86f,.78f,1):ImVec4(.15f,.15f,.15f,1)));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive,(light_theme?ImVec4(.73f,.81f,.71f,1):ImVec4(.2f,.2f,.2f,1)));
         ImGui::PushStyleColor(ImGuiCol_CheckMark,accent);
-        ImGui::PushStyleColor(ImGuiCol_Header,ImVec4(.2f,.3f,.18f,1));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,ImVec4(.25f,.35f,.22f,1));
+        ImGui::PushStyleColor(ImGuiCol_Header,(light_theme?ImVec4(.75f,.86f,.71f,1):ImVec4(.2f,.3f,.18f,1)));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,(light_theme?ImVec4(.66f,.79f,.62f,1):ImVec4(.25f,.35f,.22f,1)));
         custom_jobs::DrawCatalog(scale,notifications::Russian(),[]{Request(3);CloseMenu();},[]{Request(4);CloseMenu();});
         ImGui::PopStyleColor(6);
         ImGui::EndChild();
@@ -364,13 +389,31 @@ void DrawMenu(int preview_page = -1) {
 #else
     const float cards_y=156,cards_height=204,keyboard_y=385;
 #endif
+    if(visible_page!=4){
     card(28,cards_y,410,cards_height);card(462,cards_y,410,cards_height);
-    text(48,cards_y+20,23,white,Tr("Owned-trailer cargo","Грузы для прицепа"));
-    text(48,cards_y+64,16,muted,Tr("Replace current owned-trailer offers.\nUp to 5 new offers per company.","Заменить текущие грузы для прицепа.\nДо 5 новых предложений на компанию."));
-    text(482,cards_y+20,23,white,Tr("Freight & Quick jobs","Рынок и агентства"));
-    text(482,cards_y+64,16,muted,Tr("Refresh offers across all companies.\nExisting orders will be replaced.","Обновить предложения во всех компаниях.\nСуществующие заказы будут заменены."));
-    if(button(Tr("Refresh cargo","Обновить грузы"),48,cards_y+cards_height-62,370,42,true)) { Request(1);CloseMenu(); }
-    if(button(Tr("Refresh orders","Обновить заказы"),482,cards_y+cards_height-62,370,42,true)) { Request(2);CloseMenu(); }
+    text(482,cards_y+20,23,white,Tr("Owned-trailer cargo","Грузы для прицепа"));
+    paragraph(482,cards_y+64,Tr("Replace current owned-trailer offers.\nUp to 5 new offers per company.","Заменить текущие грузы для прицепа.\nДо 5 новых предложений на компанию."));
+    text(48,cards_y+20,23,white,Tr("Freight & Quick jobs","Рынок и агентства"));
+    paragraph(48,cards_y+64,Tr("Refresh offers across all companies.\nExisting orders will be replaced.","Обновить предложения во всех компаниях.\nСуществующие заказы будут заменены."));
+    if(button(Tr("Refresh orders","Обновить заказы"),48,cards_y+cards_height-62,370,42,true)) { Request(2);CloseMenu(); }
+    bool attached=false;
+#ifdef CARGO_CONTROL_CUSTOM_JOBS
+    attached=custom_jobs::Snapshot()->owned_trailer_attached;
+#endif
+    ImGui::BeginDisabled(!attached);
+    if(button(Tr("Refresh cargo","Обновить грузы"),482,cards_y+cards_height-62,370,42,attached)) { Request(1);CloseMenu(); }
+    if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !attached)
+        ImGui::SetTooltip("%s",Tr("Attach your own trailer to refresh its cargo.","Прицепите собственный прицеп для обновления грузов."));
+    ImGui::EndDisabled();
+        text(32,632,13,muted,"v" CARGO_CONTROL_VERSION_TEXT);
+        if(button(Tr("Close","Закрыть"),734,588,138,44))CloseMenu();
+        ImGui::End();ImGui::PopStyleVar();return;
+    }
+    text(32,218,21,white,Tr("Appearance","Оформление"));
+    text(32,254,16,muted,Tr("Interface theme","Тема интерфейса"));
+    if(button(Tr("Dark","Тёмная"),32,284,164,40,!light_theme))SetLightTheme(false);
+    if(button(Tr("Light","Светлая"),212,284,164,40,light_theme))SetLightTheme(true);
+    if(theme_save_error)text(32,340,16,white,Tr("Could not save theme","Не удалось сохранить тему"));
     text(32,keyboard_y,21,white,Tr("Keyboard shortcuts","Горячие клавиши"));
     constexpr float columns[]={32,318,604};
     constexpr float field_width=172,control_gap=8,reset_width=88,control_height=38;
@@ -389,8 +432,8 @@ void DrawMenu(int preview_page = -1) {
     if(button(Tr("Clear##freight","Сброс##freight"),columns[2]+field_width+control_gap,control_y,reset_width,control_height)){draft_freight=0;capture=0;}
     text(32,keyboard_y+114,15,muted,Tr("Select a field and press a shortcut. Esc cancels input.","Выберите поле и нажмите сочетание. Esc отменяет ввод."));
     const float warning_y=keyboard_y+138;
-    draw->AddRectFilled(pos(32,warning_y),pos(872,warning_y+32),IM_COL32(32,27,17,255),8*scale);
-    text(46,warning_y+8,15,IM_COL32(235,190,85,255),Tr("Forgot your shortcut? Close the game and delete CargoControl.ini next to the DLL.","Забыли клавиши? Закройте игру и удалите CargoControl.ini рядом с DLL."));
+    draw->AddRectFilled(pos(32,warning_y),pos(872,warning_y+32),(light_theme?IM_COL32(255,241,202,255):IM_COL32(32,27,17,255)),8*scale);
+    text(46,warning_y+8,15,(light_theme?IM_COL32(110,73,12,255):IM_COL32(235,190,85,255)),Tr("Forgot your shortcut? Close the game and delete CargoControl.ini next to the DLL.","Забыли клавиши? Закройте игру и удалите CargoControl.ini рядом с DLL."));
     button("?##restore-shortcuts",838,warning_y+3,26,26);
     if(ImGui::IsItemHovered()){
         ImGui::BeginTooltip();ImGui::PushTextWrapPos(420*scale);
@@ -454,7 +497,7 @@ void DrawNotice() {
     draw->AddRectFilled(p,{p.x+4*scale,p.y+h},green);
     draw->AddText(font,16*scale,{p.x+24*scale,p.y+16*scale},green,"CARGO CONTROL");
     draw->AddText(font,20*scale,{p.x+24*scale,p.y+50*scale},white,notice.c_str(),nullptr,body_width);
-    if(logo)draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),{p.x+w-152*scale,p.y+h-116*scale},{p.x+w-20*scale,p.y+h-19*scale});
+    if(logo)draw->AddImageRounded(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(logo.Get())),{p.x+w-152*scale,p.y+h-116*scale},{p.x+w-20*scale,p.y+h-19*scale},{0,0},{1,1},IM_COL32_WHITE,10*scale);
     ImGui::End();
 }
 bool IsMouse(void* instance) {
@@ -544,7 +587,7 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
     const bool focused=GetForegroundWindow()==game || allow_hidden;
     if(reopen_catalog && focused){reopen_catalog=false;menu_page=reopen_page;OpenMenu();}
     if(!allow_hidden) Poll(focused);
-    ImGui_ImplDX11_NewFrame();auto& io=ImGui::GetIO();
+    ApplyTheme();ImGui_ImplDX11_NewFrame();auto& io=ImGui::GetIO();
     if(menu&&focused) {
         pointer.Resize(float(rect.right),float(rect.bottom));io.DisplaySize={float(rect.right),float(rect.bottom)};
         io.AddMousePosEvent(pointer.x,pointer.y); // Never poll the game's recentered OS cursor.
@@ -580,6 +623,9 @@ void RenderFrame(IDXGISwapChain* chain,bool allow_hidden,bool preview_menu,int p
 bool Initialize(const std::filesystem::path& directory,Logger log,bool install_hook) {
     std::lock_guard<std::recursive_mutex> guard(mutex);logger=log;ini=directory/L"CargoControl.ini";
     const auto read_ini=SettingsReadPath(directory);
+    wchar_t theme_value[16]{};
+    GetPrivateProfileStringW(L"Interface",L"Theme",L"Dark",theme_value,16,ini.c_str());
+    light_theme=_wcsicmp(theme_value,L"Light")==0;theme_save_error=false;
     scale_percent=std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Interface",L"ScalePercent",130,ini.c_str())),75,300);scale_save_error=language_save_error=false;
     menu_binding=hotkeys::MenuBinding(GetPrivateProfileIntW(L"Bindings",L"Menu",hotkeys::Menu,ini.c_str()));
     cargo=hotkeys::Valid(GetPrivateProfileIntW(L"Bindings",L"Cargo",0,read_ini.c_str()));
@@ -636,6 +682,13 @@ int Tick(bool ready) {std::lock_guard<std::recursive_mutex> guard(mutex);const a
 void FinishAction(bool show_catalog,int page){std::lock_guard<std::recursive_mutex> guard(mutex);if(operation.Active())Log("Operation feedback completed.");operation.Complete();busy_drawn=false;busy_chain=nullptr;progress_done=progress_total=0;reopen_catalog=show_catalog;reopen_page=page;}
 void SetProgress(std::uint64_t done,std::uint64_t total){std::lock_guard<std::recursive_mutex> guard(mutex);progress_total=total;progress_done=std::min(done,total);}
 void CancelPending(){FinishAction(false);}
+bool LightTheme(){std::lock_guard<std::recursive_mutex> guard(mutex);return light_theme;}
+bool SetLightTheme(bool light){
+    std::lock_guard<std::recursive_mutex> guard(mutex);
+    theme_save_error=!WritePrivateProfileStringW(L"Interface",L"Theme",light?L"Light":L"Dark",ini.c_str());
+    if(theme_save_error)return false;
+    light_theme=light;return true;
+}
 int ScalePercent(){std::lock_guard<std::recursive_mutex> guard(mutex);return scale_percent;}
 bool SetScalePercent(int percent){
     std::lock_guard<std::recursive_mutex> guard(mutex);percent=std::clamp(percent,75,300);

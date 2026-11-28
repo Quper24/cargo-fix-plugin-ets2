@@ -11,9 +11,11 @@ namespace custom_jobs {
 // UI owns strings only; native pointers never cross the render/game boundary.
 inline void DrawCatalog(float scale, bool russian, const std::function<void()>& scan,const std::function<void()>& create) {
     const auto state = Snapshot();
-    auto tr = [&](const char* en, const char* ru) { return russian ? ru : en; };
+    auto tr = [&](const char* en, const char* ru) { return localization::Text(en,ru,russian); };
     static std::uint64_t session = UINT64_MAX;
     static std::string origin_city, origin_id, cargo_id, destination_city, destination_id;
+    static std::string origin_region,destination_region;
+    static std::mt19937 random{std::random_device{}()};
     static int market = 0;
     static bool delivery_time_x4=false;
     static bool all_cargos=false;
@@ -21,6 +23,7 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if (session != state->session) {
         session = state->session;
         origin_city.clear(); origin_id.clear(); cargo_id.clear(); destination_city.clear(); destination_id.clear();
+        origin_region.clear();destination_region.clear();
         delivery_time_x4=false;all_cargos=false;request_error.clear();
     }
     ImGui::SetWindowFontScale(scale * .5f);
@@ -69,8 +72,13 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     }
     if(!state->names_supported)ImGui::TextDisabled("%s",tr("Display names unavailable; identifiers shown.","Названия пока недоступны; показаны идентификаторы."));
     else if(catalog.label_fallbacks)ImGui::TextDisabled("%s",tr("Some missing names use identifiers.","Для части ненайденных названий показаны идентификаторы."));
+    if(!state->owned_trailer_attached && market==1){market=0;cargo_id.clear();destination_city.clear();destination_id.clear();}
     ImGui::RadioButton(tr("Freight market", "Грузоперевозки"), &market, 0); ImGui::SameLine();
+    ImGui::BeginDisabled(!state->owned_trailer_attached);
     if(ImGui::RadioButton(tr("Owned trailer", "Собственный прицеп"), &market, 1))RefreshTrailerCargos();
+    if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !state->owned_trailer_attached)
+        ImGui::SetTooltip("%s",tr("Attach your own trailer to use this market.","Прицепите собственный прицеп, чтобы пользоваться этим рынком."));
+    ImGui::EndDisabled();
     if(market==0){ImGui::SameLine(0,16*scale);ImGui::Checkbox(tr("Show all cargo","Показывать все грузы"),&all_cargos);
         if(ImGui::IsItemHovered()){
             ImGui::BeginTooltip();ImGui::PushTextWrapPos(460*scale);
@@ -101,33 +109,66 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     auto receiver_allowed=[&](const Company& company){
         return company.id!=origin_id && !cargo_id.empty() && (market==1 || all_cargos || Accepts(company,cargo_id));
     };
+    auto random_combo=[&](const char* id,std::string& selected,const std::vector<controls::Choice>& choices){
+        ImGui::PushID(id);
+        const float size=ImGui::GetFrameHeight(),spacing=ImGui::GetStyle().ItemSpacing.x;
+        ImGui::SetNextItemWidth(std::max(1.f,ImGui::GetContentRegionAvail().x-size-spacing));
+        bool changed=controls::SearchCombo("choice",selected,choices,russian,ContainsName);
+        ImGui::SameLine(0,spacing);ImGui::BeginDisabled(choices.empty());
+        if(ImGui::Button("##random",{size,size}))changed=controls::ChooseRandom(selected,choices,random)||changed;
+        const auto p=ImGui::GetItemRectMin();auto* draw=ImGui::GetWindowDrawList();
+        const ImU32 color=ImGui::GetColorU32(ImGuiCol_Text);
+        draw->AddRect({p.x+size*.22f,p.y+size*.22f},{p.x+size*.78f,p.y+size*.78f},color,size*.08f);
+        for(const auto dot:std::array<ImVec2,5>{{{.35f,.35f},{.65f,.35f},{.5f,.5f},{.35f,.65f},{.65f,.65f}}})
+            draw->AddCircleFilled({p.x+size*dot.x,p.y+size*dot.y},size*.045f,color);
+        if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("%s",tr("Random choice from this list","Случайный выбор из этого списка"));
+        ImGui::EndDisabled();ImGui::PopID();return changed;
+    };
+    auto region_select=[&](const char* id,std::string& selected,bool destination){
+        std::map<std::string,std::string> regions;
+        for(const auto& company:catalog.companies)if(!destination || receiver_allowed(company)){
+            const auto key=company.region.empty()?"#unknown":company.region;
+            regions.emplace(key,company.region.empty()?tr("Unknown","Не определено"):
+                company.region_name.empty()?company.region:company.region_name);
+        }
+        std::vector<controls::Choice> choices;
+        for(const auto& region:regions)choices.push_back({region.first,region.second});
+        std::sort(choices.begin(),choices.end(),[](const auto& a,const auto& b){return a.name<b.name;});
+        choices.insert(choices.begin(),{"",tr("All","Все")});
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(state->american?tr("State / province","Штат / провинция"):tr("Country","Страна"));
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        return controls::SearchCombo(id,selected,choices,russian,ContainsName);
+    };
     auto city_select = [&](const char* label, std::string& selected, bool destination) {
         std::map<std::string,std::string> cities;
         for (const auto& company : catalog.companies)
-            if (!destination || receiver_allowed(company))
+            if (InRegion(company,destination?destination_region:origin_region) && (!destination || receiver_allowed(company)))
                 cities.emplace(company.city,city_names[company.city]);
         std::vector<std::pair<std::string,std::string>> sorted(cities.begin(),cities.end());
         std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.second==b.second?a.first<b.first:a.second<b.second;});
         bool changed = false;
         ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(label);ImGui::PushID(label);
-        ImGui::SetNextItemWidth(-FLT_MIN);
         std::vector<controls::Choice> choices;
         for(const auto& city:sorted)choices.push_back({city.first,city.second});
-        changed=controls::SearchCombo("city",selected,choices,russian,ContainsName);
+        changed=random_combo("city",selected,choices);
         ImGui::PopID();return changed;
     };
     auto base_select = [&](const char* label, const std::string& city, std::string& selected, bool destination) {
         bool changed = false;
         ImGui::AlignTextToFramePadding();ImGui::TextUnformatted(label);ImGui::PushID(label);
-        ImGui::SetNextItemWidth(-FLT_MIN);
         std::vector<controls::Choice> choices;
         for(const auto& base:catalog.companies)
             if(base.city==city&&(!destination||receiver_allowed(base)))choices.push_back({base.id,base.name});
         std::sort(choices.begin(),choices.end(),[](const auto& a,const auto& b){return a.name==b.name?a.id<b.id:a.name<b.name;});
-        changed=controls::SearchCombo("company",selected,choices,russian,ContainsName);
+        changed=random_combo("company",selected,choices);
         ImGui::PopID();return changed;
     };
-    if(ImGui::BeginTable("origin-fields",2,ImGuiTableFlags_SizingStretchSame)){
+    if(ImGui::BeginTable("origin-fields",3,ImGuiTableFlags_SizingStretchSame)){
+        ImGui::TableNextColumn();
+        if(region_select("origin-region",origin_region,false)){
+            origin_city.clear();origin_id.clear();if(market==0&&!all_cargos)cargo_id.clear();destination_city.clear();destination_id.clear();
+        }
         ImGui::TableNextColumn();
         if(city_select(tr("Origin city","Город отправления"),origin_city,false)){
             origin_id.clear();if(market==0&&!all_cargos)cargo_id.clear();destination_city.clear();destination_id.clear();
@@ -143,14 +184,16 @@ inline void DrawCatalog(float scale, bool russian, const std::function<void()>& 
     if (!cargo_id.empty() && std::find(available.begin(), available.end(), cargo_id) == available.end()) {
         cargo_id.clear(); destination_city.clear();destination_id.clear();
     }
-    ImGui::TextUnformatted(tr("Cargo","Груз"));ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::TextUnformatted(tr("Cargo","Груз"));
     std::vector<controls::Choice> cargo_choices;
     for(const auto& id:available)cargo_choices.push_back({id,cargo_label(id)});
     std::sort(cargo_choices.begin(),cargo_choices.end(),[](const auto& a,const auto& b){return a.name==b.name?a.id<b.id:a.name<b.name;});
-    if(controls::SearchCombo("cargo",cargo_id,cargo_choices,russian,ContainsName)){
+    if(random_combo("cargo",cargo_id,cargo_choices)){
         destination_city.clear();destination_id.clear();
     }
-    if(ImGui::BeginTable("destination-fields",2,ImGuiTableFlags_SizingStretchSame)){
+    if(ImGui::BeginTable("destination-fields",3,ImGuiTableFlags_SizingStretchSame)){
+        ImGui::TableNextColumn();
+        if(region_select("destination-region",destination_region,true)){destination_city.clear();destination_id.clear();}
         ImGui::TableNextColumn();
         if(city_select(tr("Destination city","Город назначения"),destination_city,true))destination_id.clear();
         ImGui::TableNextColumn();

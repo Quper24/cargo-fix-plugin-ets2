@@ -22,6 +22,7 @@
 #include <vector>
 #include <cstring>
 #include <algorithm>
+#include <imgui.h>
 using Microsoft::WRL::ComPtr;
 #define Check(ok) do { if(!(ok)) { std::fprintf(stderr,"DX11 check failed: line %d, error %lu\n",__LINE__,GetLastError());std::exit(1); } }while(0)
 void Log(const char* s) { std::puts(s); }
@@ -62,7 +63,7 @@ void Capture(ID3D11Device* dev,ID3D11DeviceContext* gpu,IDXGISwapChain* chain,co
         }
         for(unsigned y=menu_y(77);y<menu_y(174);++y)for(unsigned x=menu_x(772);x<menu_x(904);++x){
             const auto* q=pixel+y*map.RowPitch+x*4;
-            if(std::abs(int(q[2])-int(brand_palette::Red))<=3 && std::abs(int(q[1])-int(brand_palette::Green))<=3 && std::abs(int(q[0])-int(brand_palette::Blue))<=3)++accent_logo;
+            if(q[1]>160 && q[1]>q[0]+10 && q[1]>q[2]+10)++accent_logo;
             if(q[0]>235 && q[1]>235 && q[2]>235)++white_logo;
         }
         Check(accent_logo>10 && white_logo>100 && white_title>200);
@@ -82,6 +83,25 @@ int wmain(int argc,wchar_t** argv) {
     notifications::Initialize(settings_dir);
     Check(notifications::SetLanguage(interface_language::Choice::Russian));
     Check(branding::Initialize());
+    ImFontAtlas language_atlas;
+    wchar_t windows[MAX_PATH]{};GetWindowsDirectoryW(windows,MAX_PATH);
+    const auto font_path=std::filesystem::path(windows)/L"Fonts"/L"seguisb.ttf";
+    auto* language_font=language_atlas.AddFontFromFileTTF(font_path.string().c_str(),36.f,nullptr,interface_language::GlyphRanges);
+    Check(language_font && language_atlas.Build());
+    for(const auto& entry:localization::Catalog())for(const auto& text:entry.second){
+        const int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.c_str(),-1,nullptr,0);
+        Check(count>0);std::wstring wide(count,0);
+        MultiByteToWideChar(CP_UTF8,0,text.c_str(),-1,wide.data(),count);
+        for(const auto c:wide)if(c>=32){
+            if(!language_font->FindGlyphNoFallback(c))std::fprintf(stderr,"Missing font glyph U+%04X\n",unsigned(c));
+            Check(language_font->FindGlyphNoFallback(c));
+        }
+    }
+    std::vector<unsigned char> logo_pixels;
+    Check(branding::LogoPixels(192,141,logo_pixels));
+    unsigned transparent=0,opaque=0;
+    for(std::size_t i=3;i<logo_pixels.size();i+=4){transparent+=logo_pixels[i]==0;opaque+=logo_pixels[i]==255;}
+    Check(transparent>100 && opaque>100);
     WNDCLASSW cls{};cls.lpfnWndProc=DefWindowProcW;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"QSCargoOfflineDx11";Check(RegisterClassW(&cls));
     HWND window=CreateWindowExW(0,cls.lpszClassName,L"",WS_POPUP,0,0,1024,768,nullptr,nullptr,cls.hInstance,nullptr);Check(window);
     const auto original_proc=GetWindowLongPtrW(window,GWLP_WNDPROC);
@@ -99,6 +119,7 @@ int wmain(int argc,wchar_t** argv) {
     };
     Check(overlay_ui::Initialize(settings_dir,Log,false));
     Check(overlay_ui::ScalePercent()==130);
+    Check(!overlay_ui::LightTheme());
     overlay_ui::Request(2);overlay_ui::SetProgress(123,1000);Check(overlay_ui::Tick()==0); // Feedback must be rendered before work starts.
     for(int i=0;i<3;++i)render();Sleep(160);
     Check(overlay_ui::Inspect().operation==2);
@@ -127,8 +148,8 @@ int wmain(int argc,wchar_t** argv) {
 #ifdef CARGO_CONTROL_CUSTOM_JOBS
     custom_jobs::Catalog fixture;
     fixture.cargos.push_back({"cargo.mod_cargo9","Соль"});
-    fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","FedEx",{"cargo.mod_cargo9"},{},"Анн-Арбор"});
-    fixture.companies.push_back({"company.volatile.other_base.other_city","other_city","Pepsi",{}, {"cargo.mod_cargo9"},"Кенора"});
+    fixture.companies.push_back({"company.volatile.mod_depot.mod_city","mod_city","FedEx",{"cargo.mod_cargo9"},{},"Анн-Арбор","michigan","Мичиган"});
+    fixture.companies.push_back({"company.volatile.other_base.other_city","other_city","Pepsi",{}, {"cargo.mod_cargo9"},"Кенора","ontario","Онтарио"});
     custom_jobs::PreviewCatalog(std::move(fixture));
 #ifdef CARGO_CONTROL_ROAD_TRIP
     road_trip::View road;
@@ -201,10 +222,28 @@ int wmain(int argc,wchar_t** argv) {
     SetWindowPos(window,nullptr,0,0,1920,1080,SWP_NOACTIVATE|SWP_NOZORDER);
     for(int i=0;i<3;++i)render(true,0);
     Capture(dev.Get(),gpu.Get(),chain.Get(),argc>13?argv[13]:nullptr,true);
+    for(int i=0;i<3;++i)render(true,4);
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>14?argv[14]:nullptr);
+    Check(overlay_ui::SetLightTheme(true));Check(overlay_ui::LightTheme());
+    wchar_t theme[16]{};
+    GetPrivateProfileStringW(L"Interface",L"Theme",L"",theme,16,settings.c_str());
+    Check(std::wstring(theme)==L"Light");
+    for(int page:{0,1,2,3,4}){for(int i=0;i<3;++i)render(true,page);}
+    Capture(dev.Get(),gpu.Get(),chain.Get(),argc>15?argv[15]:nullptr);
+    for(int i=3;i<static_cast<int>(interface_language::Choice::Count);++i){
+        Check(notifications::SetLanguage(static_cast<interface_language::Choice>(i)));
+        for(int page:{0,1,4})for(int frame=0;frame<3;++frame)render(true,page);
+        if(i==static_cast<int>(interface_language::Choice::German))Capture(dev.Get(),gpu.Get(),chain.Get(),argc>16?argv[16]:nullptr);
+        if(i==static_cast<int>(interface_language::Choice::Kazakh))Capture(dev.Get(),gpu.Get(),chain.Get(),argc>17?argv[17]:nullptr);
+        if(i==static_cast<int>(interface_language::Choice::Romanian))Capture(dev.Get(),gpu.Get(),chain.Get(),argc>18?argv[18]:nullptr);
+    }
+    Check(notifications::SetLanguage(interface_language::Choice::English));
     Check(overlay_ui::SetScalePercent(160));
     overlay_ui::Shutdown();Check(GetWindowLongPtrW(window,GWLP_WNDPROC)==original_proc);
     Check(overlay_ui::Initialize(settings_dir,Log,true));
     Check(overlay_ui::ScalePercent()==160); // Persists across renderer/plugin restarts.
+    Check(overlay_ui::LightTheme());
+    Check(overlay_ui::SetLightTheme(false));
     render();
     // Simulate a plugin installed after Cargo Control. Shutdown must preserve
     // that plugin's chain and allow calls through our dormant procedure.
